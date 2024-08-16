@@ -1,18 +1,11 @@
-// Get the canvas and its 2D rendering context
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-
-const canvas2 = document.getElementById('canvas2');
-const ctx2 = canvas2.getContext('2d');
 
 // Resize the canvas to fit the window
 window.addEventListener('resize', resizeCanvas);
 function resizeCanvas() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
-
-  canvas2.width = window.innerWidth;
-  canvas2.height = window.innerHeight;
 }
 resizeCanvas();
 
@@ -24,28 +17,20 @@ let light;
 // Number of rays to cast
 let rayCount = 1000; // Current number of rays being cast
 
-// Variables for touch event handling
-let tapTime = 0;
-let tapTimeout;
-
-// Wall color
-let wallColor = 'rgb(244,164,96)'; // Sandy Brown
-let edgeColor = 'rgb(139,69,19)'; // Saddle Brown
-
 // Field of view for the light source
 let fov = 60;
 const fovHalf = fov / 2;
 let viewDirection = 0;
 
 // Define scaling factors to adjust wall heights and brightness separately
-const heightScaleFactor = 0.02;
-const brightnessScaleFactor = 2.5; 
+const heightScaleFactor = 100;
+const brightnessScaleFactor = 200;
 
 // Variables to store the previous mouse position
 let prevMouseX = 0;
 
 // Movement for the light source
-let moveSpeed = 0.0015;
+let moveSpeed = 0.005;
 let moveUp = false;
 let moveDown = false;
 let moveLeft = false;
@@ -58,20 +43,6 @@ const collisionRadius = 2;
 const sensitivity = 3;
 let prevTime = performance.now(); // Track the previous time
 
-// Toggle top-down view
-let topDown = true;
-if(topDown){
-  canvas2.style.display = 'block';
-  canvas.style.display = 'none';
-}
-else{
-  canvas2.style.display = 'none';
-  canvas.style.display = 'block';
-}
-
-// Toggle texture display
-let showTexture = true;
-
 // Desried frames per second
 const desiredFPS = 60;
 
@@ -79,57 +50,40 @@ const desiredFPS = 60;
 const textureImageWall = new Image();
 textureImageWall.src = 'wall_texture_1.jpg';
 const textureImageEdge = new Image();
-textureImageEdge.src = 'wall_texture_2.jpg';
+textureImageEdge.src = 'wall_texture_2.png';
 
 // Class to create boundaries
 class Boundaries {
-  constructor(x1, y1, x2, y2, color, texture){
+  constructor(x1, y1, x2, y2, texture){
     this.a = {x: x1, y: y1};
     this.b = {x: x2, y: y2};
-    this.color = color;
     this.texture = texture;
-  }
-
-  // Method to draw boundaries
-  draw(){
-    ctx.beginPath();
-    ctx.moveTo(this.a.x, this.a.y);
-    ctx.lineTo(this.b.x, this.b.y);
-    ctx.strokeStyle = this.color;
-    ctx.stroke();
   }
 }
 
 // Draw boundaries around the canvas
-boundaries.push(new Boundaries(0, 0, canvas.width, 0, edgeColor, textureImageEdge));
-boundaries.push(new Boundaries(0, 0, 0, canvas.height, edgeColor, textureImageEdge));
-boundaries.push(new Boundaries(0, canvas.height, canvas.width, canvas.height, edgeColor, textureImageEdge));
-boundaries.push(new Boundaries(canvas.width, 0, canvas.width, canvas.height, edgeColor, textureImageEdge));
+boundaries.push(new Boundaries(0, 0, canvas.width, 0, textureImageEdge));
+boundaries.push(new Boundaries(0, 0, 0, canvas.height, textureImageEdge));
+boundaries.push(new Boundaries(0, canvas.height, canvas.width, canvas.height, textureImageEdge));
+boundaries.push(new Boundaries(canvas.width, 0, canvas.width, canvas.height, textureImageEdge));
 
 // Create walls
-boundaries.push(new Boundaries(100, 100, 200, 100, wallColor, textureImageWall));
-boundaries.push(new Boundaries(200, 100, 200, 200, wallColor, textureImageWall));
-boundaries.push(new Boundaries(200, 200, 100, 200, wallColor, textureImageWall));
-boundaries.push(new Boundaries(100, 200, 100, 100, wallColor, textureImageWall));
+boundaries.push(new Boundaries(100, 100, 200, 100, textureImageWall));
+boundaries.push(new Boundaries(200, 100, 200, 200, textureImageWall));
+boundaries.push(new Boundaries(200, 200, 100, 200, textureImageWall));
+boundaries.push(new Boundaries(100, 200, 100, 100, textureImageWall));
 
-boundaries.push(new Boundaries(500, 100, 800, 300, wallColor, textureImageWall));
+boundaries.push(new Boundaries(500, 100, 800, 300, textureImageWall));
 
 // Class to create rays
 class Rays {
-  constructor(x, y, angle, color){
+  constructor(x, y, angle){
     this.pos = {x: x, y: y};
     this.dir = {x: Math.cos(angle), y: Math.sin(angle)};
-    this.color = color;
   }
 
   // Method to draw rays
   draw(){
-    ctx.beginPath();
-    ctx.moveTo(this.pos.x, this.pos.y);
-    ctx.lineTo(this.pos.x + this.dir.x * 5, this.pos.y + this.dir.y * 5);
-    ctx.strokeStyle = this.color;
-    ctx.stroke();
-
     this.updatePos();
 
     this.update(this.pos.x + this.dir.x * 10, this.pos.y + this.dir.y * 10);
@@ -174,12 +128,16 @@ class Rays {
     const t = numeratorT / denominator;
     const u = numeratorU / denominator;
 
-    if (t > 0 && t < 1 && u > 0){
+    if (t > 0 && t < 1 && u > 0) {
       const point = {
         x: x1 + t * (x2 - x1),
         y: y1 + t * (y2 - y1)
-      }
-      return point;
+      };
+
+      return {
+        point,
+        boundary: bound
+      };
     } else {
       return;
     }
@@ -214,27 +172,21 @@ class Rays {
   }
 }
 
-// Class to create light sources
+// Class to create light source
 class lightSource {
-  constructor(x, y, color, rayColor){
+  constructor(x, y,){
     this.pos = {x: x, y: y};
     this.rays = [];
-    this.color = color;
     this.heading = 0;
 
     // Generate rays for the light source
     for (let i = viewDirection - fov/2; i < viewDirection + fov/2; i += (fov / rayCount)){
-      this.rays.push(new Rays(this.pos.x, this.pos.y, i * Math.PI / 180, rayColor));
+      this.rays.push(new Rays(this.pos.x, this.pos.y, i * Math.PI / 180));
     }
   }
 
   // Method to draw light source and its rays
   draw(){
-    ctx.beginPath();
-    ctx.arc(this.pos.x, this.pos.y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = this.color;
-    ctx.fill();
-
     for(let ray of this.rays){
       ray.pos.x = this.pos.x;
       ray.pos.y = this.pos.y;
@@ -246,87 +198,57 @@ class lightSource {
   spread(boundaries) {
     const scene = [];
     for (let i = 0; i < this.rays.length; i++) {
-      const ray = this.rays[i];
-      let closest = null;
-      let record = Infinity;
-      let textureX = 0;
-      let color = 'rgb(0, 0, 0)'
-      let texture = textureImageWall;
+        const ray = this.rays[i];
+        let closest = null;
+        let record = Infinity;
+        let textureX = 0;
+        let texture = null;
+        let hitBoundary = null;
 
-      for (let boundary of boundaries) {
-        const point = ray.cast(boundary);
-        if (point) {
-          let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
-          const angle = this.heading - ray.dir.x;
-          distance *= Math.cos(angle);
-          if (distance < record) {
-            record = distance;
-            closest = point;
-            color = boundary.color;
-            texture = boundary.texture;
+        for (let boundary of boundaries) {
+            const result = ray.cast(boundary);
+            if (result) {
+                const { point, boundary: hitBound } = result;
+                let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
+                const angle = Math.atan2(ray.dir.y, ray.dir.x) - viewDirection * Math.PI / 180;
+                distance *= Math.cos(angle); // Fix fisheye effect
+                if (distance < record) {
+                    record = distance;
+                    closest = point;
+                    texture = hitBound.texture;
+                    hitBoundary = hitBound;
 
-            // Determine which part of the texture to use
-            if (Math.abs(boundary.b.x - boundary.a.x) > Math.abs(boundary.b.y - boundary.a.y)) {
-              // Horizontal wall, use x-coordinate
-              textureX = (point.x - boundary.a.x) / (boundary.b.x - boundary.a.x);
-            } else {
-              // Vertical wall, use y-coordinate
-              textureX = (point.y - boundary.a.y) / (boundary.b.y - boundary.a.y);
+                    // Determine which part of the texture to use
+                    if (Math.abs(hitBound.b.x - hitBound.a.x) > Math.abs(hitBound.b.y - hitBound.a.y)) {
+                        textureX = (point.x - hitBound.a.x) / (hitBound.b.x - hitBound.a.x);
+                    } else {
+                        textureX = (point.y - hitBound.a.y) / (hitBound.b.y - hitBound.a.y);
+                    }
+
+                    textureX = textureX % 1;
+                    if (textureX < 0) textureX += 1;
+                }
             }
-
-            // Wrap the texture coordinate
-            textureX = textureX % 1;
-            if (textureX < 0) textureX += 1; // Ensure textureX is positive
-          }
         }
-      }
 
-      if (closest) {
-        ctx.beginPath();
-        ctx.moveTo(this.pos.x, this.pos.y);
-        ctx.lineTo(closest.x, closest.y);
-        ctx.strokeStyle = this.color;
-        ctx.stroke();
-      }
-      scene[i] = [record, color, textureX, texture];
+        scene[i] = {
+            distance: record,
+            textureX: textureX,
+            texture: texture,
+            boundary: hitBoundary
+        };
     }
     return scene;
-  }
-
-  move(x, y) {
-    let newPos = { x: x, y: y };
-    this.pos = newPos;
-  }
-
-  rotate(angle) {
-    this.heading += angle;
-    for (let ray of this.rays) {
-      ray.update(this.pos.x + Math.cos(ray.dir.x + angle), this.pos.y + Math.sin(ray.dir.y + angle));
-    }
-  }
+}
 }
 
-light = new lightSource(20, 20, 'rgba(255, 255, 237, 0.03)', 'rgba(255, 255, 0, 0.8)');
+light = new lightSource(20, 20,);
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'r') {
-    light = new lightSource(window.width/2, window.height/2, 'rgba(255, 255, 237, 0.03)', 'rgba(255, 255, 0, 0.8)');
+    light = new lightSource(20, 20);
   } 
-  else if (e.key === 'p') {
-    topDown = !topDown;
-    if(topDown){
-      canvas2.style.display = 'block';
-      canvas.style.display = 'none';
-    }
-    else{
-      canvas2.style.display = 'none';
-      canvas.style.display = 'block';
-    }
-  }
-  else if (e.key === 't') {
-    showTexture = !showTexture;
-  }
-});
+})
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
@@ -340,7 +262,7 @@ window.addEventListener('keydown', (e) => {
   }
 
   if(e.key === 'Shift'){
-    moveSpeed = 0.003;
+    moveSpeed = 0.01;
   }
 });
 
@@ -356,7 +278,7 @@ window.addEventListener('keyup', (e) => {
   }
 
   if(e.key === 'Shift'){
-    moveSpeed = 0.0015;
+    moveSpeed = 0.005;
   }
 });
 
@@ -381,88 +303,113 @@ window.addEventListener('mousemove', (e) => {
   // Update the rays based on the new view direction
   light.rays = [];
   for (let i = viewDirection - fov/2; i < viewDirection + fov/2; i += (fov / rayCount)) {
-    light.rays.push(new Rays(light.pos.x, light.pos.y, i * Math.PI / 180, 'rgba(255, 255, 0, 0.8)'));
+    light.rays.push(new Rays(light.pos.x, light.pos.y, i * Math.PI / 180));
   }
 });
 
-// Helper function to map a value from one range to another
-function map(value, start1, stop1, start2, stop2) {
-  return start2 + (stop2 - start2) * ((value - start1) / (stop1 - start1));
-}
-
-function draw3D(scene) {
-  const w = canvas2.width / scene.length; // Width of each vertical strip on the screen
+function render3D(scene) {
+  const w = canvas.width / scene.length;
+  const smoothingRadius = 3; // Number of slices to take on each side for averaging
 
   for (let i = 0; i < scene.length; i++) {
-    const rayAngle = viewDirection + map(i, 0, scene.length - 1, -fovHalf, fovHalf); // Angle of the ray
-    const perpendicularDistance = scene[i][0] * Math.cos((rayAngle - viewDirection) * Math.PI / 180); // Calculate perpendicular distance
+      const { distance, textureX, texture } = scene[i];
 
-    // Calculate the wall height based on the perpendicular distance
-    const wallHeight = canvas2.height / (perpendicularDistance * heightScaleFactor);
+      if (distance === Infinity) continue; // Skip if no wall was hit
 
-    // Calculate darkness based on distance and apply brightness scaling
-    const brightness = map(perpendicularDistance*brightnessScaleFactor, 0, canvas2.width, 255, 30);
+      // Calculate the brightness of the current slice
+      const currentBrightness = Math.min(1, brightnessScaleFactor / distance);
 
-    if(!showTexture){
-      // Extract the RGB values from the color string
-      let [r, g, b] = scene[i][1].replace('rgb(', '').replace(')', '').split(',').map(Number);
+      // Collect brightness values of surrounding slices
+      let brightnessSum = currentBrightness;
+      let count = 1;
 
-      // Adjust the RGB values based on the brightness
-      r = Math.max(0, Math.min(255, r * brightness / 255));
-      g = Math.max(0, Math.min(255, g * brightness / 255));
-      b = Math.max(0, Math.min(255, b * brightness / 255));
+      for (let j = 1; j <= smoothingRadius; j++) {
+          if (scene[i - j]) {
+              const leftDistance = scene[i - j].distance;
+              const leftBrightness = Math.min(1, brightnessScaleFactor / leftDistance);
+              brightnessSum += leftBrightness;
+              count++;
+          }
+          if (scene[i + j]) {
+              const rightDistance = scene[i + j].distance;
+              const rightBrightness = Math.min(1, brightnessScaleFactor / rightDistance);
+              brightnessSum += rightBrightness;
+              count++;
+          }
+      }
 
-      // Draw the wall segment with adjusted brightness
-      ctx2.fillStyle = `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
-      ctx2.fillRect(i * w, canvas2.height / 2 - wallHeight / 2, w + 1, wallHeight);
-    } else {
-      // Calculate the texture X coordinate (wrapping if needed)
-      let textureX = scene[i][2] * scene[i][3].width;
-      textureX = textureX % scene[i][3].width; // Wrap texture coordinate
+      // Calculate the average brightness
+      const averageBrightness = brightnessSum / count;
 
-      // Draw the wall segment using the texture
-      ctx2.drawImage(
-        scene[i][3], // Image source
-        textureX, 0, 1, scene[i][3].height, // Source rectangle (1 pixel wide)
-        i * w, canvas2.height / 2 - wallHeight / 2, // Destination rectangle top-left
-        w + 1, wallHeight // Destination rectangle width and height
-      );
-    }
+      const wallHeight = (canvas.height / distance) * heightScaleFactor;
+      const y = (canvas.height - wallHeight) / 2;
+
+      // Draw the wall slice
+      if (texture) {
+          const textureY = 0;
+          const textureWidth = texture.width;
+          const textureHeight = texture.height;
+
+          // Calculate the portion of the texture to use based on ray position
+          const textureSliceWidth = textureWidth * w / canvas.width;
+
+          // Calculate which section of the texture to draw
+          const textureStartX = textureX * textureWidth;
+
+          // Draw the image section
+          ctx.drawImage(
+              texture,
+              textureStartX, textureY,
+              textureSliceWidth, textureHeight,
+              i * w, y,
+              w, wallHeight
+          );
+
+          // Apply brightness with smoothing
+          ctx.fillStyle = `rgba(0, 0, 0, ${1 - averageBrightness})`;
+          ctx.fillRect(i * w, y, w, wallHeight);
+      } else {
+          // Fallback if texture is not available
+          ctx.fillStyle = `rgba(255, 255, 255, ${averageBrightness})`;
+          ctx.fillRect(i * w, y, w, wallHeight);
+      }
   }
 }
+
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx2.clearRect(0, 0, canvas.width, canvas.height);
-  
-  // Create gradient for the top rectangle
-  let gradient1 = ctx2.createLinearGradient(0, 0, 0, canvas.height / 2);
-  gradient1.addColorStop(0, '#444444');
-  gradient1.addColorStop(0.7, '#222222');
-  gradient1.addColorStop(1, '#111111');
-  
-  ctx2.fillStyle = gradient1;
-  ctx2.fillRect(0, 0, canvas.width, canvas.height / 2);
-  
-  // Create gradient for the bottom rectangle
-  let gradient2 = ctx2.createLinearGradient(0, canvas.height / 2, 0, canvas.height);
-  gradient2.addColorStop(0, '#001000');
-  gradient2.addColorStop(0.3, '#006000');
-  gradient2.addColorStop(1, '#006600');
-  
-  ctx2.fillStyle = gradient2;
-  ctx2.fillRect(0, canvas.height / 2, canvas.width, canvas.height / 2);
+
+  const scene = light.spread(boundaries);
+  render3D(scene);
 
   light.draw();
-  const scene = light.spread(boundaries);
 
-  draw3D(scene);
-
-  for (let boundary of boundaries){
-    boundary.draw();
+  // Minimap (optional)
+  const minimapSize = 150;
+  const minimapScale = minimapSize / Math.max(canvas.width, canvas.height);
+  ctx.save();
+  ctx.scale(minimapScale, minimapScale);
+  ctx.translate(10 / minimapScale, 10 / minimapScale);
+  
+  // Draw boundaries on minimap
+  for (let boundary of boundaries) {
+    ctx.beginPath();
+    ctx.moveTo(boundary.a.x, boundary.a.y);
+    ctx.lineTo(boundary.b.x, boundary.b.y);
+    ctx.strokeStyle = 'white';
+    ctx.stroke();
   }
 
-  drawFPS(topDown ? ctx2 : ctx);
+  // Draw light source on minimap
+  ctx.fillStyle = 'yellow';
+  ctx.beginPath();
+  ctx.arc(light.pos.x, light.pos.y, 1 / minimapScale, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  drawFPS(ctx);
 }
 
 // Check if all textures are loaded
