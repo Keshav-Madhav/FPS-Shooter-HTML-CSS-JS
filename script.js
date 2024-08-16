@@ -22,7 +22,7 @@ let rays = [];
 let light;
 
 // Number of rays to cast
-let rayCount = 800; // Current number of rays being cast
+let rayCount = 1000; // Current number of rays being cast
 
 // Variables for touch event handling
 let tapTime = 0;
@@ -31,16 +31,6 @@ let tapTimeout;
 // Wall color
 let wallColor = 'rgb(244,164,96)'; // Sandy Brown
 let edgeColor = 'rgb(139,69,19)'; // Saddle Brown
-
-// Maze dimensions
-let mazeRows = 11;
-let mazeCols = 23;
-let cellWidth = canvas.width / mazeCols;
-let cellHeight = canvas.height / mazeRows;
-
-// Calculate the position of the top left corner of the maze
-let mazeStartX = cellWidth;
-let mazeStartY = cellHeight;
 
 // Field of view for the light source
 let fov = 60;
@@ -80,7 +70,7 @@ else{
 }
 
 // Toggle texture display
-let showTexture = false;
+let showTexture = true;
 
 // Desried frames per second
 const desiredFPS = 60;
@@ -110,81 +100,19 @@ class Boundaries {
   }
 }
 
-// Initialize maze with all walls
-let maze = new Array(mazeRows);
-for (let i = 0; i < mazeRows; i++) {
-  maze[i] = new Array(mazeCols).fill(1);
-}
-
-// Recursive function to carve paths
-function carve(x, y) {
-  // Define the carving directions
-  let directions = [
-    [-1, 0], // Up
-    [1, 0], // Down
-    [0, -1], // Left
-    [0, 1] // Right
-  ];
-
-  // Randomize the directions
-  directions.sort(() => Math.random() - 0.5);
-
-  // Try carving in each direction
-  for (let [dx, dy] of directions) {
-    let nx = x + dx * 2;
-    let ny = y + dy * 2;
-
-    if (nx >= 0 && nx < mazeRows && ny >= 0 && ny < mazeCols && maze[nx][ny] === 1) {
-      maze[x + dx][y + dy] = 0;
-      maze[nx][ny] = 0;
-      carve(nx, ny);
-    }
-  }
-}
-
-// Start carving from the upper-left corner
-carve(0, 0);
-// Generate optimized boundaries for the maze
-for (let i = 0; i < mazeRows; i++) {
-  for (let j = 0; j < mazeCols; j++) {
-    if (maze[i][j] === 1) {
-      let x1 = j * cellWidth;
-      let y1 = i * cellHeight;
-      let x2 = (j + 1) * cellWidth;
-      let y2 = (i + 1) * cellHeight;
-
-      // Check the neighboring cells
-      if (i > 0 && maze[i - 1][j] === 0) { // Top
-        boundaries.push(new Boundaries(x1, y1, x2, y1, wallColor, textureImageWall));
-      }
-      if (j > 0 && maze[i][j - 1] === 0) { // Left
-        boundaries.push(new Boundaries(x1, y1, x1, y2, wallColor, textureImageWall));
-      }
-      if (j < mazeCols - 1 && maze[i][j + 1] === 0) { // Right
-        boundaries.push(new Boundaries(x2, y1, x2, y2, wallColor, textureImageWall));
-      }
-      if (i < mazeRows - 1 && maze[i + 1][j] === 0) { // Bottom
-        boundaries.push(new Boundaries(x1, y2, x2, y2, wallColor, textureImageWall));
-      }
-    }
-  }
-}
-
 // Draw boundaries around the canvas
 boundaries.push(new Boundaries(0, 0, canvas.width, 0, edgeColor, textureImageEdge));
 boundaries.push(new Boundaries(0, 0, 0, canvas.height, edgeColor, textureImageEdge));
 boundaries.push(new Boundaries(0, canvas.height, canvas.width, canvas.height, edgeColor, textureImageEdge));
 boundaries.push(new Boundaries(canvas.width, 0, canvas.width, canvas.height, edgeColor, textureImageEdge));
 
+// Create walls
+boundaries.push(new Boundaries(100, 100, 200, 100, wallColor, textureImageWall));
+boundaries.push(new Boundaries(200, 100, 200, 200, wallColor, textureImageWall));
+boundaries.push(new Boundaries(200, 200, 100, 200, wallColor, textureImageWall));
+boundaries.push(new Boundaries(100, 200, 100, 100, wallColor, textureImageWall));
 
-// // draw 5 random boundaries
-// for (let i = 0; i < 5; i++) {
-//   let x1 = Math.random() * canvas.width;
-//   let y1 = Math.random() * canvas.height;
-//   let x2 = Math.random() * canvas.width;
-//   let y2 = Math.random() * canvas.height;
-//   boundaries.push(new Boundaries(x1, y1, x2, y2, wallColor));
-// }
+boundaries.push(new Boundaries(500, 100, 800, 300, wallColor, textureImageWall));
 
 // Class to create rays
 class Rays {
@@ -280,39 +208,9 @@ class Rays {
       dx -= moveSpeed * Math.cos(strafeDirection);
       dy -= moveSpeed * Math.sin(strafeDirection);
     }
-  
-    let newX = light.pos.x + dx;
-    let newY = light.pos.y + dy;
-  
-    // Check horizontal movement
-    if (!isPointInWall(newX, light.pos.y)) {
-      light.pos.x = newX;
-    }
-  
-    // Check vertical movement
-    if (!isPointInWall(light.pos.x, newY)) {
-      light.pos.y = newY;
-    }
-  
-    // Additional collision checks for corners
-    const cornerChecks = [
-      {x: light.pos.x - collisionRadius, y: light.pos.y - collisionRadius},
-      {x: light.pos.x + collisionRadius, y: light.pos.y - collisionRadius},
-      {x: light.pos.x - collisionRadius, y: light.pos.y + collisionRadius},
-      {x: light.pos.x + collisionRadius, y: light.pos.y + collisionRadius}
-    ];
-  
-    for (let point of cornerChecks) {
-      if (isPointInWall(point.x, point.y)) {
-        // Push the player slightly away from the wall
-        const pushDistance = 1; // Adjust as needed
-        if (point.x < light.pos.x) light.pos.x += pushDistance;
-        if (point.x > light.pos.x) light.pos.x -= pushDistance;
-        if (point.y < light.pos.y) light.pos.y += pushDistance;
-        if (point.y > light.pos.y) light.pos.y -= pushDistance;
-        break;
-      }
-    }
+
+    light.pos.x += dx;
+    light.pos.y += dy;
   }
 }
 
@@ -408,11 +306,11 @@ class lightSource {
   }
 }
 
-light = new lightSource(mazeStartX - 30, mazeStartY - 30, 'rgba(255, 255, 237, 0.03)', 'rgba(255, 255, 0, 0.8)');
+light = new lightSource(20, 20, 'rgba(255, 255, 237, 0.03)', 'rgba(255, 255, 0, 0.8)');
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'r') {
-    light = new lightSource(mazeStartX - 30, mazeStartY - 30, 'rgba(255, 255, 237, 0.03)', 'rgba(255, 255, 0, 0.8)');
+    light = new lightSource(window.width/2, window.height/2, 'rgba(255, 255, 237, 0.03)', 'rgba(255, 255, 0, 0.8)');
   } 
   else if (e.key === 'p') {
     topDown = !topDown;
@@ -486,19 +384,6 @@ window.addEventListener('mousemove', (e) => {
     light.rays.push(new Rays(light.pos.x, light.pos.y, i * Math.PI / 180, 'rgba(255, 255, 0, 0.8)'));
   }
 });
-
-// Function to check if a point is within a wall
-function isPointInWall(x, y) {
-  const cellX = Math.floor(x / cellWidth);
-  const cellY = Math.floor(y / cellHeight);
-  
-  // Check if the point is within the maze bounds
-  if (cellX < 0 || cellX >= mazeCols || cellY < 0 || cellY >= mazeRows) {
-    return true; // Treat out-of-bounds as a wall
-  }
-  
-  return maze[cellY][cellX] === 1; // 1 represents a wall in your maze array
-}
 
 // Helper function to map a value from one range to another
 function map(value, start1, stop1, start2, stop2) {
