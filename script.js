@@ -36,8 +36,13 @@ let moveDown = false;
 let moveLeft = false;
 let moveRight = false;
 
-// Collision radius for the light source
-const collisionRadius = 2;
+// Minimap (optional)
+const minimapSize = 150;
+const minimapScale = minimapSize / Math.max(canvas.width, canvas.height);
+
+// Calculate the position for the bottom left corner of the canvas
+const minimapX = 20;
+const minimapY = canvas.height - minimapSize + 40;
 
 // Sensitivity factor for rotation speed
 const sensitivity = 3;
@@ -198,45 +203,45 @@ class lightSource {
   spread(boundaries) {
     const scene = [];
     for (let i = 0; i < this.rays.length; i++) {
-        const ray = this.rays[i];
-        let closest = null;
-        let record = Infinity;
-        let textureX = 0;
-        let texture = null;
-        let hitBoundary = null;
+      const ray = this.rays[i];
+      let closest = null;
+      let record = Infinity;
+      let textureX = 0;
+      let texture = null;
+      let hitBoundary = null;
 
-        for (let boundary of boundaries) {
-            const result = ray.cast(boundary);
-            if (result) {
-                const { point, boundary: hitBound } = result;
-                let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
-                const angle = Math.atan2(ray.dir.y, ray.dir.x) - viewDirection * Math.PI / 180;
-                distance *= Math.cos(angle); // Fix fisheye effect
-                if (distance < record) {
-                    record = distance;
-                    closest = point;
-                    texture = hitBound.texture;
-                    hitBoundary = hitBound;
+      for (let boundary of boundaries) {
+        const result = ray.cast(boundary);
+        if (result) {
+          const { point, boundary: hitBound } = result;
+          let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
+          const angle = Math.atan2(ray.dir.y, ray.dir.x) - viewDirection * Math.PI / 180;
+          distance *= Math.cos(angle); // Fix fisheye effect
+          if (distance < record) {
+            record = distance;
+            closest = point;
+            texture = hitBound.texture;
+            hitBoundary = hitBound;
 
-                    // Determine which part of the texture to use
-                    if (Math.abs(hitBound.b.x - hitBound.a.x) > Math.abs(hitBound.b.y - hitBound.a.y)) {
-                        textureX = (point.x - hitBound.a.x) / (hitBound.b.x - hitBound.a.x);
-                    } else {
-                        textureX = (point.y - hitBound.a.y) / (hitBound.b.y - hitBound.a.y);
-                    }
-
-                    textureX = textureX % 1;
-                    if (textureX < 0) textureX += 1;
-                }
+            // Determine which part of the texture to use
+            if (Math.abs(hitBound.b.x - hitBound.a.x) > Math.abs(hitBound.b.y - hitBound.a.y)) {
+                textureX = (point.x - hitBound.a.x) / (hitBound.b.x - hitBound.a.x);
+            } else {
+                textureX = (point.y - hitBound.a.y) / (hitBound.b.y - hitBound.a.y);
             }
-        }
 
-        scene[i] = {
-            distance: record,
-            textureX: textureX,
-            texture: texture,
-            boundary: hitBoundary
-        };
+            textureX = textureX % 1;
+            if (textureX < 0) textureX += 1;
+          }
+        }
+      }
+
+      scene[i] = {
+        distance: record,
+        textureX: textureX,
+        texture: texture,
+        boundary: hitBoundary
+      };
     }
     return scene;
 }
@@ -312,86 +317,81 @@ function render3D(scene) {
   const smoothingRadius = 3; // Number of slices to take on each side for averaging
 
   for (let i = 0; i < scene.length; i++) {
-      const { distance, textureX, texture } = scene[i];
+    const { distance, textureX, texture } = scene[i];
 
-      if (distance === Infinity) continue; // Skip if no wall was hit
+    if (distance === Infinity) continue; // Skip if no wall was hit
 
-      // Calculate the brightness of the current slice
-      const currentBrightness = Math.min(1, brightnessScaleFactor / distance);
+    // Calculate the brightness of the current slice
+    const currentBrightness = Math.min(1, brightnessScaleFactor / distance);
 
-      // Collect brightness values of surrounding slices
-      let brightnessSum = currentBrightness;
-      let count = 1;
+    // Collect brightness values of surrounding slices
+    let brightnessSum = currentBrightness;
+    let count = 1;
 
-      for (let j = 1; j <= smoothingRadius; j++) {
-          if (scene[i - j]) {
-              const leftDistance = scene[i - j].distance;
-              const leftBrightness = Math.min(1, brightnessScaleFactor / leftDistance);
-              brightnessSum += leftBrightness;
-              count++;
-          }
-          if (scene[i + j]) {
-              const rightDistance = scene[i + j].distance;
-              const rightBrightness = Math.min(1, brightnessScaleFactor / rightDistance);
-              brightnessSum += rightBrightness;
-              count++;
-          }
+    for (let j = 1; j <= smoothingRadius; j++) {
+      if (scene[i - j]) {
+        const leftDistance = scene[i - j].distance;
+        const leftBrightness = Math.min(1, brightnessScaleFactor / leftDistance);
+        brightnessSum += leftBrightness;
+        count++;
       }
-
-      // Calculate the average brightness
-      const averageBrightness = brightnessSum / count;
-
-      const wallHeight = (canvas.height / distance) * heightScaleFactor;
-      const y = (canvas.height - wallHeight) / 2;
-
-      // Draw the wall slice
-      if (texture) {
-          const textureY = 0;
-          const textureWidth = texture.width;
-          const textureHeight = texture.height;
-
-          // Calculate the portion of the texture to use based on ray position
-          const textureSliceWidth = textureWidth * w / canvas.width;
-
-          // Calculate which section of the texture to draw
-          const textureStartX = textureX * textureWidth;
-
-          // Draw the image section
-          ctx.drawImage(
-              texture,
-              textureStartX, textureY,
-              textureSliceWidth, textureHeight,
-              i * w, y,
-              w, wallHeight
-          );
-
-          // Apply brightness with smoothing
-          ctx.fillStyle = `rgba(0, 0, 0, ${1 - averageBrightness})`;
-          ctx.fillRect(i * w, y, w, wallHeight);
-      } else {
-          // Fallback if texture is not available
-          ctx.fillStyle = `rgba(255, 255, 255, ${averageBrightness})`;
-          ctx.fillRect(i * w, y, w, wallHeight);
+      if (scene[i + j]) {
+        const rightDistance = scene[i + j].distance;
+        const rightBrightness = Math.min(1, brightnessScaleFactor / rightDistance);
+        brightnessSum += rightBrightness;
+        count++;
       }
+    }
+
+    // Calculate the average brightness
+    const averageBrightness = brightnessSum / count;
+
+    const wallHeight = (canvas.height / distance) * heightScaleFactor;
+    const y = (canvas.height - wallHeight) / 2;
+
+    // Draw the wall slice
+    if (texture) {
+      const textureY = 0;
+      const textureWidth = texture.width;
+      const textureHeight = texture.height;
+
+      // Calculate the portion of the texture to use based on ray position
+      const textureSliceWidth = textureWidth * w / canvas.width;
+
+      // Calculate which section of the texture to draw
+      const textureStartX = textureX * textureWidth;
+
+      // Draw the image section
+      ctx.drawImage(
+        texture,
+        textureStartX, textureY,
+        textureSliceWidth, textureHeight,
+        i * w, y,
+        w, wallHeight
+      );
+
+      // Apply brightness with smoothing
+      ctx.fillStyle = `rgba(0, 0, 0, ${1 - averageBrightness})`;
+      ctx.fillRect(i * w, y, w, wallHeight);
+    } else {
+      // Fallback if texture is not available
+      ctx.fillStyle = `rgba(255, 255, 255, ${averageBrightness})`;
+      ctx.fillRect(i * w, y, w, wallHeight);
+    }
   }
 }
 
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
   const scene = light.spread(boundaries);
   render3D(scene);
-
   light.draw();
-
-  // Minimap (optional)
-  const minimapSize = 150;
-  const minimapScale = minimapSize / Math.max(canvas.width, canvas.height);
+  
   ctx.save();
   ctx.scale(minimapScale, minimapScale);
-  ctx.translate(10 / minimapScale, 10 / minimapScale);
-  
+  ctx.translate(minimapX / minimapScale, minimapY / minimapScale);
+
   // Draw boundaries on minimap
   for (let boundary of boundaries) {
     ctx.beginPath();
