@@ -17,7 +17,7 @@ const minimapX = 20;
 const minimapY = main_canvas.height - minimapSize + 40;
 
 // Sensitivity factor for rotation speed
-const sensitivity = 3;
+const sensitivity = 0.3;
 let prevTime = performance.now(); // Track the previous time
 
 // Load textures

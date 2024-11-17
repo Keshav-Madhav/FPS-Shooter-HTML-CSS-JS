@@ -49,12 +49,6 @@ boundaries.push(new Boundaries(500, 100, 800, 300, textureImageWall));
 user = new UserCameraClass({x: 20, y: 20,  fov: 60, rayCount: 1000});
 
 main_canvas.addEventListener('keydown', (e) => {
-  if (e.key === 'r') {
-    user = new UserCameraClass({x: 20, y: 20, fov: 60, rayCount: 1000});
-  } 
-})
-
-main_canvas.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
     user.moveForwards = true;
   } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
@@ -68,6 +62,10 @@ main_canvas.addEventListener('keydown', (e) => {
   if(e.key === 'Shift'){
     user.moveSpeed = 3;
   }
+
+  if (e.key === 'r') {
+    user = new UserCameraClass({x: 20, y: 20, fov: 60, rayCount: 1000});
+  } 
 });
 
 main_canvas.addEventListener('keyup', (e) => {
@@ -86,18 +84,26 @@ main_canvas.addEventListener('keyup', (e) => {
   }
 });
 
-main_canvas.addEventListener('mousemove', (e) => {
-  const currentTime = performance.now();
-  var deltaTime = currentTime - prevTime;
-  deltaTime = deltaTime === 0 ? 1 : deltaTime; // Prevent division by zero
-  const deltaX = e.clientX - prevMouseX;
-  const speed = Math.abs(deltaX) / deltaTime; // Calculate mouse movement speed
-  
-  user.viewDirection += Math.sign(deltaX) * speed * sensitivity; // Adjust fov rotation based on mouse movement speed
+// Add Pointer Lock API setup
+main_canvas.addEventListener('click', function() {
+  main_canvas.requestPointerLock();
+});
 
-  prevMouseX = e.clientX;
-  prevTime = currentTime;
-  
+document.addEventListener('pointerlockchange', lockChangeAlert, false);
+document.addEventListener('mozpointerlockchange', lockChangeAlert, false);
+
+function lockChangeAlert() {
+  if (document.pointerLockElement === main_canvas ||
+      document.mozPointerLockElement === main_canvas) {
+    document.addEventListener("mousemove", updatePosition, false);
+  } else {
+    document.removeEventListener("mousemove", updatePosition, false);
+  }
+}
+
+function updatePosition(e) {
+  user.viewDirection += e.movementX * sensitivity;
+
   // Ensure the view direction stays within 0 to 360 degrees
   if (user.viewDirection < 0) {
     user.viewDirection += 360;
@@ -110,7 +116,7 @@ main_canvas.addEventListener('mousemove', (e) => {
   for (let i = user.viewDirection - user.fov/2; i < user.viewDirection + user.fov/2; i += (user.fov / user.rayCount)) {
     user.rays.push(new RayClass(user.pos.x, user.pos.y, i * Math.PI / 180));
   }
-});
+}
 
 
 function draw() {
