@@ -72,14 +72,14 @@ function drawBackground(background_ctx, height, width) {
  * @param {CanvasRenderingContext2D} ctx - The rendering context for the main canvas.
  * @param {Array<Boundaries>} boundaries - Array of boundary objects to draw on the minimap.
  * @param {UserCameraClass} user - The user object representing the camera's position and FOV.
- * @param {number} minimapScale - The scale factor for the minimap.
+ * @param {number} minimapscale - The scale factor for the minimap.
  * @param {number} minimapX - The x-coordinate for the minimap's bottom-left corner.
  * @param {number} minimapY - The y-coordinate for the minimap's bottom-left corner.
  */
-function drawMinimap(ctx, boundaries, user, minimapScale, minimapX, minimapY) {
+function drawMinimap(ctx, boundaries, user) {
   ctx.save();
-  ctx.scale(minimapScale, minimapScale);
-  ctx.translate(minimapX / minimapScale, minimapY / minimapScale);
+  ctx.scale(miniMapSettings.scale, miniMapSettings.scale);
+  ctx.translate(miniMapSettings.x / miniMapSettings.scale, miniMapSettings.y / miniMapSettings.scale);
 
   // Draw boundaries on minimap
   for (let boundary of boundaries) {
@@ -93,7 +93,7 @@ function drawMinimap(ctx, boundaries, user, minimapScale, minimapX, minimapY) {
   // Draw user position on minimap
   ctx.fillStyle = 'yellow';
   ctx.beginPath();
-  ctx.arc(user.pos.x, user.pos.y, 1 / minimapScale, 0, Math.PI * 2);
+  ctx.arc(user.pos.x, user.pos.y, 1 / miniMapSettings.scale, 0, Math.PI * 2);
   ctx.fill();
 
   // Draw user FOV (cone) on minimap

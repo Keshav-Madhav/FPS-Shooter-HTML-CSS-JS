@@ -14,12 +14,12 @@ class UserCameraClass {
    * @param {number} options.fov - The field of view (in degrees).
    * @param {number} options.rayCount - The number of rays emitted by the camera.
    */
-  constructor({ x, y, fov, rayCount }) {
+  constructor({ x, y, fov, rayCount, viewDirection = 0 }) {
     this.pos = { x: x, y: y }; // Position of the camera.
     this.rayCount = rayCount; // Total number of rays emitted.
     this.rays = []; // Array to store RayClass instances.
     this.heading = 0; // Current heading of the camera.
-    this.viewDirection = 0; // Direction the camera is facing (in degrees).
+    this.viewDirection = viewDirection; // Direction the camera is facing (in degrees).
     this.fov = fov; // Field of view (in degrees).
     this.moveSpeed = 1; // Speed of movement for the camera.
     this.moveForwards = false; // Whether the camera is moving forward.
@@ -28,7 +28,7 @@ class UserCameraClass {
     this.moveRight = false; // Whether the camera is strafing right.
 
     // Initialize rays based on the field of view and ray count.
-    for (let i = 0 - fov / 2; i < 0 + fov / 2; i += fov / rayCount) {
+    for (let i = viewDirection - fov / 2; i < viewDirection + fov / 2; i += fov / rayCount) {
       this.rays.push(new RayClass(x, y, (i * Math.PI) / 180));
     }
   }
@@ -144,6 +144,17 @@ class UserCameraClass {
 
     this.pos.x += dx * deltaTime;
     this.pos.y += dy * deltaTime;
+  }
+
+  updateViewDirection(viewDirection) {
+    if (viewDirection < 0) viewDirection += 360;
+    else if (viewDirection >= 360) viewDirection -= 360;
+
+    this.viewDirection = viewDirection;
+    this.rays = [];
+    for (let i = viewDirection - this.fov / 2; i < viewDirection + this.fov / 2; i += this.fov / this.rayCount) {
+      this.rays.push(new RayClass(this.pos.x, this.pos.y, (i * Math.PI) / 180));
+    }
   }
 }
 

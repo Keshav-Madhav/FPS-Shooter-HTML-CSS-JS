@@ -1,7 +1,8 @@
 import Boundaries from "./classes/BoundariesClass.js";
-import RayClass from "./classes/RayClass.js";
+import GameMap from "./classes/GameMapClass.js";
 import Textures from "./classes/TexturesClass.js";
 import UserCameraClass from "./classes/UserCameraClass.js";
+import { createTestMap } from "./maps/testMap.js";
 import { getDeltaTime } from "./utils/deltaTime.js";
 import { drawFPS } from "./utils/fpsDisplay.js";
 import { render3D } from "./utils/render3DFunction.js";
@@ -11,42 +12,21 @@ window.addEventListener('resize', ()=>{
   resizeCanvas({canvasArray: [main_canvas, background_canvas], ratio: 16/9});
   drawBackground(background_ctx, background_canvas.height, background_canvas.width);
 });
-resizeCanvas({canvasArray: [main_canvas, background_canvas], ratio: 16/9});
-drawBackground(background_ctx, background_canvas.height, background_canvas.width);
-
-const minimapScale = minimapSize / Math.max(main_canvas.width, main_canvas.height);
-
-// Calculate the position for the bottom left corner of the main_canvas
-const minimapX = 20;
-const minimapY = main_canvas.height - minimapSize + 40;
 
 /** @type {Boundaries[]} */
 let boundaries = [];
+
 /** @type {UserCameraClass} */
 let user;
 
+/** @type {GameMap[]} */
+let gameMaps = []
+
+/** @type {GameMap} */
+let ActiveMap = null;
+
 /** @type {Textures} */
 const textures = new Textures();
-
-// Add textures
-textures.addTexture("wall", './images/wall_texture_1.jpg');
-textures.addTexture("edge", './images/wall_texture_2.png');
-
-// Draw boundaries around the main_canvas
-boundaries.push(new Boundaries(0, 0, main_canvas.width, 0, textureImageEdge));
-boundaries.push(new Boundaries(0, 0, 0, main_canvas.height, textureImageEdge));
-boundaries.push(new Boundaries(0, main_canvas.height, main_canvas.width, main_canvas.height, textureImageEdge));
-boundaries.push(new Boundaries(main_canvas.width, 0, main_canvas.width, main_canvas.height, textureImageEdge));
-
-// Create walls
-boundaries.push(new Boundaries(100, 100, 200, 100, textureImageWall));
-boundaries.push(new Boundaries(200, 100, 200, 200, textureImageWall));
-boundaries.push(new Boundaries(200, 200, 100, 200, textureImageWall));
-boundaries.push(new Boundaries(100, 200, 100, 100, textureImageWall));
-
-boundaries.push(new Boundaries(500, 100, 800, 300, textureImageWall));
-
-user = new UserCameraClass({x: 20, y: 20,  fov: 60, rayCount: 1000});
 
 main_canvas.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
@@ -102,22 +82,33 @@ function lockChangeAlert() {
 }
 
 function updatePosition(e) {
-  user.viewDirection += e.movementX * sensitivity;
-
-  // Ensure the view direction stays within 0 to 360 degrees
-  if (user.viewDirection < 0) {
-    user.viewDirection += 360;
-  } else if (user.viewDirection >= 360) {
-    user.viewDirection -= 360;
-  }
-
-  // Update the rays based on the new view direction
-  user.rays = [];
-  for (let i = user.viewDirection - user.fov/2; i < user.viewDirection + user.fov/2; i += (user.fov / user.rayCount)) {
-    user.rays.push(new RayClass(user.pos.x, user.pos.y, i * Math.PI / 180));
-  }
+  user.updateViewDirection(user.viewDirection + (e.movementX * sensitivity));
 }
 
+function setActiveMap(gameMaps, mapName) {
+  ActiveMap = gameMaps.find(map => map.name === mapName);
+  boundaries = ActiveMap.boundaries;
+  user.pos = {x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y};
+  user.updateViewDirection(ActiveMap.userViewDirection);
+}
+
+function setUpGame(){
+  resizeCanvas({canvasArray: [main_canvas, background_canvas], ratio: 16/9});
+  drawBackground(background_ctx, background_canvas.height, background_canvas.width);
+
+  // Add textures
+  textures.addTexture("wall", './images/wall_texture_1.jpg');
+  textures.addTexture("edge", './images/wall_texture_2.png');
+
+  // Add maps
+  gameMaps.push(createTestMap(textures, 'Test Map'));
+
+  // Create user
+  user = new UserCameraClass({x: 0, y: 0,  fov: 60, rayCount: 1000, viewDirection: 0});
+
+  // Set active map
+  setActiveMap(gameMaps, 'Test Map');
+}
 
 function draw() {
   main_ctx.clearRect(0, 0, main_canvas.width, main_canvas.height);
@@ -128,13 +119,14 @@ function draw() {
   render3D(scene);
   user.draw(deltaTime);
 
-  drawMinimap(main_ctx, boundaries, user, minimapScale, minimapX, minimapY);
+  drawMinimap(main_ctx, boundaries, user);
 
   drawFPS(main_canvas.width, main_canvas.height, main_ctx);
 
   requestAnimationFrame(draw);
 }
 
+setUpGame();
 textures.setOnAllLoaded(() => {
   draw();
 });
