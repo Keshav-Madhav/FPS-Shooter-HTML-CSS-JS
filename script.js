@@ -1,48 +1,47 @@
 import RayClass from "./classes/RayClass.js";
 import UserCameraClass from "./classes/UserCameraClass.js";
 import { drawFPS } from "./utils/fpsDisplay.js";
+import { drawBackground, resizeCanvas } from "./utils/utils.js";
 
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+const main_canvas = document.getElementById('mainCanvas');
+const main_ctx = main_canvas.getContext('2d');
+const background_canvas = document.getElementById('backgroundCanvas');
+const background_ctx = background_canvas.getContext('2d');
 
-// Resize the canvas to fit the window
-window.addEventListener('resize', resizeCanvas);
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-resizeCanvas();
+window.addEventListener('resize', ()=>{
+  resizeCanvas({canvasArray: [main_canvas, background_canvas], ratio: 16/9});
+  drawBackground(background_ctx, background_canvas.height, background_canvas.width);
+});
+resizeCanvas({canvasArray: [main_canvas, background_canvas], ratio: 16/9});
+drawBackground(background_ctx, background_canvas.height, background_canvas.width);
 
 // Arrays to store boundaries, rays, and user
 let boundaries = [];
-let rays = [];
 let user;
 
 // Field of view for the user
 let fov = 60;
-const fovHalf = fov / 2;
 
 // Define scaling factors to adjust wall heights and brightness separately
 const heightScaleFactor = 100;
-const brightnessScaleFactor = 200;
+const brightnessScaleFactor = 100;
+const smoothingRadius = 3; // Number of slices to take on each side for averaging
+const darknessExponent = 2.0; // Increased for faster darkness falloff
 
 // Variables to store the previous mouse position
 let prevMouseX = 0;
 
 // Minimap (optional)
 const minimapSize = 150;
-const minimapScale = minimapSize / Math.max(canvas.width, canvas.height);
+const minimapScale = minimapSize / Math.max(main_canvas.width, main_canvas.height);
 
-// Calculate the position for the bottom left corner of the canvas
+// Calculate the position for the bottom left corner of the main_canvas
 const minimapX = 20;
-const minimapY = canvas.height - minimapSize + 40;
+const minimapY = main_canvas.height - minimapSize + 40;
 
 // Sensitivity factor for rotation speed
 const sensitivity = 3;
 let prevTime = performance.now(); // Track the previous time
-
-// Desried frames per second
-const desiredFPS = 60;
 
 // Load textures
 const textureImageWall = new Image();
@@ -59,11 +58,11 @@ class Boundaries {
   }
 }
 
-// Draw boundaries around the canvas
-boundaries.push(new Boundaries(0, 0, canvas.width, 0, textureImageEdge));
-boundaries.push(new Boundaries(0, 0, 0, canvas.height, textureImageEdge));
-boundaries.push(new Boundaries(0, canvas.height, canvas.width, canvas.height, textureImageEdge));
-boundaries.push(new Boundaries(canvas.width, 0, canvas.width, canvas.height, textureImageEdge));
+// Draw boundaries around the main_canvas
+boundaries.push(new Boundaries(0, 0, main_canvas.width, 0, textureImageEdge));
+boundaries.push(new Boundaries(0, 0, 0, main_canvas.height, textureImageEdge));
+boundaries.push(new Boundaries(0, main_canvas.height, main_canvas.width, main_canvas.height, textureImageEdge));
+boundaries.push(new Boundaries(main_canvas.width, 0, main_canvas.width, main_canvas.height, textureImageEdge));
 
 // Create walls
 boundaries.push(new Boundaries(100, 100, 200, 100, textureImageWall));
@@ -115,7 +114,8 @@ window.addEventListener('keyup', (e) => {
 
 window.addEventListener('mousemove', (e) => {
   const currentTime = performance.now();
-  const deltaTime = currentTime - prevTime;
+  var deltaTime = currentTime - prevTime;
+  deltaTime = deltaTime === 0 ? 1 : deltaTime; // Prevent division by zero
   const deltaX = e.clientX - prevMouseX;
   const speed = Math.abs(deltaX) / deltaTime; // Calculate mouse movement speed
   
@@ -139,16 +139,16 @@ window.addEventListener('mousemove', (e) => {
 });
 
 function render3D(scene) {
-  const w = canvas.width / scene.length;
-  const smoothingRadius = 3; // Number of slices to take on each side for averaging
+  const w = main_canvas.width / scene.length;
 
   for (let i = 0; i < scene.length; i++) {
     const { distance, textureX, texture } = scene[i];
 
     if (distance === Infinity) continue; // Skip if no wall was hit
 
-    // Calculate the brightness of the current slice
-    const currentBrightness = Math.min(1, brightnessScaleFactor / distance);
+    // Calculate the brightness of the current slice with exponential darkening
+    // No minimum brightness - can go completely dark
+    const currentBrightness = Math.pow(Math.min(1, brightnessScaleFactor / distance), darknessExponent);
 
     // Collect brightness values of surrounding slices
     let brightnessSum = currentBrightness;
@@ -157,13 +157,13 @@ function render3D(scene) {
     for (let j = 1; j <= smoothingRadius; j++) {
       if (scene[i - j]) {
         const leftDistance = scene[i - j].distance;
-        const leftBrightness = Math.min(1, brightnessScaleFactor / leftDistance);
+        const leftBrightness = Math.pow(Math.min(1, brightnessScaleFactor / leftDistance), darknessExponent);
         brightnessSum += leftBrightness;
         count++;
       }
       if (scene[i + j]) {
         const rightDistance = scene[i + j].distance;
-        const rightBrightness = Math.min(1, brightnessScaleFactor / rightDistance);
+        const rightBrightness = Math.pow(Math.min(1, brightnessScaleFactor / rightDistance), darknessExponent);
         brightnessSum += rightBrightness;
         count++;
       }
@@ -172,8 +172,8 @@ function render3D(scene) {
     // Calculate the average brightness
     const averageBrightness = brightnessSum / count;
 
-    const wallHeight = (canvas.height / distance) * heightScaleFactor;
-    const y = (canvas.height - wallHeight) / 2;
+    const wallHeight = (main_canvas.height / distance) * heightScaleFactor;
+    const y = (main_canvas.height - wallHeight) / 2;
 
     // Draw the wall slice
     if (texture) {
@@ -181,14 +181,11 @@ function render3D(scene) {
       const textureWidth = texture.width;
       const textureHeight = texture.height;
 
-      // Calculate the portion of the texture to use based on ray position
-      const textureSliceWidth = textureWidth * w / canvas.width;
-
-      // Calculate which section of the texture to draw
+      const textureSliceWidth = textureWidth * w / main_canvas.width;
       const textureStartX = textureX * textureWidth;
 
       // Draw the image section
-      ctx.drawImage(
+      main_ctx.drawImage(
         texture,
         textureStartX, textureY,
         textureSliceWidth, textureHeight,
@@ -196,47 +193,47 @@ function render3D(scene) {
         w, wallHeight
       );
 
-      // Apply brightness with smoothing
-      ctx.fillStyle = `rgba(0, 0, 0, ${1 - averageBrightness})`;
-      ctx.fillRect(i * w, y, w, wallHeight);
+      // Apply darkness with no maximum opacity limit
+      main_ctx.fillStyle = `rgba(0, 0, 0, ${1 - averageBrightness})`;
+      main_ctx.fillRect(i * w, y, w, wallHeight);
     } else {
       // Fallback if texture is not available
-      ctx.fillStyle = `rgba(255, 255, 255, ${averageBrightness})`;
-      ctx.fillRect(i * w, y, w, wallHeight);
+      main_ctx.fillStyle = `rgba(255, 255, 255, ${averageBrightness})`;
+      main_ctx.fillRect(i * w, y, w, wallHeight);
     }
   }
 }
 
 
 function draw() {
+  main_ctx.clearRect(0, 0, main_canvas.width, main_canvas.height);
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
   const scene = user.spread(boundaries);
   render3D(scene);
   user.draw();
 
-  ctx.save();
-  ctx.scale(minimapScale, minimapScale);
-  ctx.translate(minimapX / minimapScale, minimapY / minimapScale);
+  main_ctx.save();
+  main_ctx.scale(minimapScale, minimapScale);
+  main_ctx.translate(minimapX / minimapScale, minimapY / minimapScale);
 
   // Draw boundaries on minimap
   for (let boundary of boundaries) {
-    ctx.beginPath();
-    ctx.moveTo(boundary.a.x, boundary.a.y);
-    ctx.lineTo(boundary.b.x, boundary.b.y);
-    ctx.strokeStyle = 'white';
-    ctx.stroke();
+    main_ctx.beginPath();
+    main_ctx.moveTo(boundary.a.x, boundary.a.y);
+    main_ctx.lineTo(boundary.b.x, boundary.b.y);
+    main_ctx.strokeStyle = 'white';
+    main_ctx.stroke();
   }
 
   // Draw user on minimap
-  ctx.fillStyle = 'yellow';
-  ctx.beginPath();
-  ctx.arc(user.pos.x, user.pos.y, 1 / minimapScale, 0, Math.PI * 2);
-  ctx.fill();
+  main_ctx.fillStyle = 'yellow';
+  main_ctx.beginPath();
+  main_ctx.arc(user.pos.x, user.pos.y, 1 / minimapScale, 0, Math.PI * 2);
+  main_ctx.fill();
 
-  ctx.restore();
+  main_ctx.restore();
 
-  drawFPS(canvas.width, canvas.height, ctx);
+  drawFPS(main_canvas.width, main_canvas.height, main_ctx);
 
   requestAnimationFrame(draw);
 }

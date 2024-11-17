@@ -6,9 +6,9 @@
   <link rel="icon" type="image/png" href="favicon.png">
   <title>Ray Cast</title>
 </head>
-<body style="background: #004600; padding: 0; margin: 0; display: flex;">
-  <canvas id="canvas" style="padding: 0; margin: 0;" tabindex="0"></canvas>
-  <canvas id="canvas2" style="padding: 0; margin: 0; display: none;"></canvas>
+<body style="position: relative; background: black; padding: 0; margin: 0; height: 100dvh; width: 100vw; display: flex; align-items: center; justify-content: center;">
+  <canvas id="backgroundCanvas" style="position: absolute; padding: 0; margin: 0; outline: 2px solid white"></canvas>
+  <canvas id="mainCanvas" style="position: absolute; padding: 0; margin: 0; outline: 2px solid white" tabindex="0"></canvas>
 </body>
 <script src="script.js" type="module"></script>
 </html>
