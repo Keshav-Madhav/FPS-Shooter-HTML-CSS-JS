@@ -1,3 +1,6 @@
+import Boundaries from "../classes/BoundariesClass.js";
+import UserCameraClass from "../classes/UserCameraClass.js";
+
 /**
  * Resizes all canvas elements in the canvasArray to maintain the specified aspect ratio.
  * @param {Object} options - The options for resizing the canvas.
@@ -62,4 +65,60 @@ function drawBackground(background_ctx, height, width) {
   background_ctx.fillRect(0, height / 2, width, height / 2);
 }
 
-export { resizeCanvas, drawBackground };
+
+/**
+ * Draws the minimap on the main canvas, including user FOV and direction.
+ * 
+ * @param {CanvasRenderingContext2D} ctx - The rendering context for the main canvas.
+ * @param {Array<Boundaries>} boundaries - Array of boundary objects to draw on the minimap.
+ * @param {UserCameraClass} user - The user object representing the camera's position and FOV.
+ * @param {number} minimapScale - The scale factor for the minimap.
+ * @param {number} minimapX - The x-coordinate for the minimap's bottom-left corner.
+ * @param {number} minimapY - The y-coordinate for the minimap's bottom-left corner.
+ */
+function drawMinimap(ctx, boundaries, user, minimapScale, minimapX, minimapY) {
+  ctx.save();
+  ctx.scale(minimapScale, minimapScale);
+  ctx.translate(minimapX / minimapScale, minimapY / minimapScale);
+
+  // Draw boundaries on minimap
+  for (let boundary of boundaries) {
+    ctx.beginPath();
+    ctx.moveTo(boundary.a.x, boundary.a.y);
+    ctx.lineTo(boundary.b.x, boundary.b.y);
+    ctx.strokeStyle = 'white';
+    ctx.stroke();
+  }
+
+  // Draw user position on minimap
+  ctx.fillStyle = 'yellow';
+  ctx.beginPath();
+  ctx.arc(user.pos.x, user.pos.y, 1 / minimapScale, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Draw user FOV (cone) on minimap
+  const viewDirectionRad = user.viewDirection * Math.PI / 180;
+  const fovHalfRad = (user.fov / 2) * Math.PI / 180;
+  const fovLength = 50; // Length of FOV cone
+
+  const fovStart = {
+    x: user.pos.x + fovLength * Math.cos(viewDirectionRad - fovHalfRad),
+    y: user.pos.y + fovLength * Math.sin(viewDirectionRad - fovHalfRad)
+  };
+  const fovEnd = {
+    x: user.pos.x + fovLength * Math.cos(viewDirectionRad + fovHalfRad),
+    y: user.pos.y + fovLength * Math.sin(viewDirectionRad + fovHalfRad)
+  };
+
+  ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+  ctx.beginPath();
+  ctx.moveTo(user.pos.x, user.pos.y);
+  ctx.lineTo(fovStart.x, fovStart.y);
+  ctx.lineTo(fovEnd.x, fovEnd.y);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+export { resizeCanvas, drawBackground, drawMinimap };
