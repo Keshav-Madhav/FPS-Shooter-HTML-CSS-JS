@@ -67,7 +67,7 @@ function drawBackground(background_ctx, height, width) {
 
 
 /**
- * Draws the minimap on the main canvas, including user FOV and direction.
+ * Draws a circular minimap on the main canvas, with a fixed player position and moving map.
  * 
  * @param {CanvasRenderingContext2D} ctx - The rendering context for the main canvas.
  * @param {Array<Boundaries>} boundaries - Array of boundary objects to draw on the minimap.
@@ -77,46 +77,85 @@ function drawBackground(background_ctx, height, width) {
  * @param {number} minimapY - The y-coordinate for the minimap's bottom-left corner.
  */
 function drawMinimap(ctx, boundaries, user) {
+  const centerX = miniMapSettings.x / miniMapSettings.scale;
+  const centerY = miniMapSettings.y / miniMapSettings.scale;
+  
   ctx.save();
   ctx.scale(miniMapSettings.scale, miniMapSettings.scale);
-  ctx.translate(miniMapSettings.x / miniMapSettings.scale, miniMapSettings.y / miniMapSettings.scale);
+  
+  // Create circular clipping path at fixed position
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, miniMapSettings.radius, 0, Math.PI * 2);
+  ctx.clip();
 
-  // Draw boundaries on minimap
+  // Draw circular border
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 2 / miniMapSettings.scale;
+  ctx.stroke();
+
+  // Calculate the offset to keep player centered
+  const offsetX = centerX - user.pos.x;
+  const offsetY = centerY - user.pos.y;
+
+  // Draw boundaries on minimap with offset
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 1 / miniMapSettings.scale;
   for (let boundary of boundaries) {
     ctx.beginPath();
-    ctx.moveTo(boundary.a.x, boundary.a.y);
-    ctx.lineTo(boundary.b.x, boundary.b.y);
-    ctx.strokeStyle = 'white';
+    ctx.moveTo(boundary.a.x + offsetX, boundary.a.y + offsetY);
+    ctx.lineTo(boundary.b.x + offsetX, boundary.b.y + offsetY);
     ctx.stroke();
   }
 
-  // Draw user position on minimap
+  // Draw user position (now fixed at center)
   ctx.fillStyle = 'yellow';
   ctx.beginPath();
-  ctx.arc(user.pos.x, user.pos.y, 1 / miniMapSettings.scale, 0, Math.PI * 2);
+  ctx.arc(centerX, centerY, 2 / miniMapSettings.scale, 0, Math.PI * 2);
   ctx.fill();
 
   // Draw user FOV (cone) on minimap
   const viewDirectionRad = user.viewDirection * Math.PI / 180;
   const fovHalfRad = (user.fov / 2) * Math.PI / 180;
-  const fovLength = 50; // Length of FOV cone
+  const fovLength = Math.min(50, miniMapSettings.radius); // FOV cone length
 
   const fovStart = {
-    x: user.pos.x + fovLength * Math.cos(viewDirectionRad - fovHalfRad),
-    y: user.pos.y + fovLength * Math.sin(viewDirectionRad - fovHalfRad)
+    x: centerX + fovLength * Math.cos(viewDirectionRad - fovHalfRad),
+    y: centerY + fovLength * Math.sin(viewDirectionRad - fovHalfRad)
   };
   const fovEnd = {
-    x: user.pos.x + fovLength * Math.cos(viewDirectionRad + fovHalfRad),
-    y: user.pos.y + fovLength * Math.sin(viewDirectionRad + fovHalfRad)
+    x: centerX + fovLength * Math.cos(viewDirectionRad + fovHalfRad),
+    y: centerY + fovLength * Math.sin(viewDirectionRad + fovHalfRad)
   };
 
   ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
   ctx.beginPath();
-  ctx.moveTo(user.pos.x, user.pos.y);
+  ctx.moveTo(centerX, centerY);
   ctx.lineTo(fovStart.x, fovStart.y);
   ctx.lineTo(fovEnd.x, fovEnd.y);
   ctx.closePath();
   ctx.fill();
+
+  // Optional: Add a subtle grid or reference markers
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.lineWidth = 0.5 / miniMapSettings.scale;
+  const gridSize = 50;
+  const gridExtent = miniMapSettings.radius * 2;
+  
+  // Draw vertical grid lines
+  for (let x = -gridExtent; x <= gridExtent; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(centerX + x + (offsetX % gridSize), centerY - miniMapSettings.radius);
+    ctx.lineTo(centerX + x + (offsetX % gridSize), centerY + miniMapSettings.radius);
+    ctx.stroke();
+  }
+  
+  // Draw horizontal grid lines
+  for (let y = -gridExtent; y <= gridExtent; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(centerX - miniMapSettings.radius, centerY + y + (offsetY % gridSize));
+    ctx.lineTo(centerX + miniMapSettings.radius, centerY + y + (offsetY % gridSize));
+    ctx.stroke();
+  }
 
   ctx.restore();
 }

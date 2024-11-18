@@ -12,8 +12,15 @@ import { createCircle, createCorridor, createBoundaryPath } from "../utils/WallG
 function createTestMap(textures, name) {
   const boundaries = [];
   const wallTexture = textures.getTexture("wall");
+  const edgeTexture = textures.getTexture("edge");
   const mapWidth = 1900;
   const mapHeight = 1080;
+
+  // // Add canvas boundaries
+  boundaries.push(new Boundaries(0, 0, mapWidth, 0, edgeTexture));
+  boundaries.push(new Boundaries(0, 0, 0, mapHeight, edgeTexture));
+  boundaries.push(new Boundaries(0, mapHeight, mapWidth, mapHeight, edgeTexture));
+  boundaries.push(new Boundaries(mapWidth, 0, mapWidth, mapHeight, edgeTexture));
 
   const circularChamberValues = {
     centerX: mapWidth / 2.5,

@@ -10,9 +10,10 @@ let prevMouseX = 0;
 
 // Variables to store the minimap settings
 var miniMapSettings = {
-  x: 10,
-  y: 10,
-  scale: 0.15
+  x: 80,
+  y: 80,
+  scale: 0.15,
+  radius: 350
 }
 
 // Sensitivity factor for rotation speed

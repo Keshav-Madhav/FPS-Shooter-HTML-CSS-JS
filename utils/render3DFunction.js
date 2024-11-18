@@ -1,9 +1,11 @@
+import Boundaries from "../classes/BoundariesClass.js";
+
 /**
  * @typedef {Object} RayIntersection
  * @property {number} distance - The perpendicular distance from the camera to the closest boundary.
  * @property {number} textureX - The normalized x-coordinate on the boundary's texture (0 to 1).
  * @property {HTMLImageElement|null} texture - The texture image of the intersected boundary, or `null` if no boundary is hit.
- * @property {BoundaryClass|null} boundary - The intersected boundary object, or `null` if no intersection occurs.
+ * @property {Boundaries|null} boundary - The intersected boundary object, or `null` if no intersection occurs.
  */
 
 /**
