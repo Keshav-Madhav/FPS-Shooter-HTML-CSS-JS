@@ -1,7 +1,8 @@
 import Boundaries from "./classes/BoundariesClass.js";
 import GameMap from "./classes/GameMapClass.js";
 import Textures from "./classes/TexturesClass.js";
-import UserCameraClass from "./classes/UserCameraClass.js";
+import UserCameraClass from "./classes/CameraClass.js";
+import Player from "./classes/UserClass.js";
 import { createTestMap } from "./maps/testMap.js";
 import { getDeltaTime } from "./utils/deltaTime.js";
 import { drawFPS } from "./utils/fpsDisplay.js";
@@ -16,8 +17,8 @@ window.addEventListener('resize', ()=>{
 /** @type {Boundaries[]} */
 let boundaries = [];
 
-/** @type {UserCameraClass} */
-let user;
+/** @type {Player} */
+let player;
 
 /** @type {GameMap[]} */
 let gameMaps = []
@@ -30,37 +31,37 @@ const textures = new Textures();
 
 main_canvas.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-    user.moveForwards = true;
+    player.moveForwards = true;
   } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-    user.moveBackwards = true;
+    player.moveBackwards = true;
   } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-    user.moveRight = true;
+    player.moveRight = true;
   } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-    user.moveLeft = true;
+    player.moveLeft = true;
   }
 
   if(e.key === 'Shift'){
-    user.moveSpeed = 3;
+    player.moveSpeed = 3;
   }
 
   if (e.key === 'r') {
-    user = new UserCameraClass({x: 20, y: 20, fov: 60, rayCount: 1000});
+    player = new Player({x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y, viewDirection: ActiveMap.userViewDirection});
   } 
 });
 
 main_canvas.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-    user.moveForwards = false;
+    player.moveForwards = false;
   } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-    user.moveBackwards = false;
+    player.moveBackwards = false;
   } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-    user.moveRight = false;
+    player.moveRight = false;
   } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-    user.moveLeft = false;
+    player.moveLeft = false;
   }
 
   if(e.key === 'Shift'){
-    user.moveSpeed = 1;
+    player.moveSpeed = 1;
   }
 });
 
@@ -82,14 +83,14 @@ function lockChangeAlert() {
 }
 
 function updatePosition(e) {
-  user.updateViewDirection(user.viewDirection + (e.movementX * sensitivity));
+  player.updateViewDirection(player.viewDirection + (e.movementX * sensitivity));
 }
 
 function setActiveMap(gameMaps, mapName) {
   ActiveMap = gameMaps.find(map => map.name === mapName);
   boundaries = ActiveMap.boundaries;
-  user.pos = {x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y};
-  user.updateViewDirection(ActiveMap.userViewDirection);
+  player.pos = {x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y};
+  player.updateViewDirection(ActiveMap.userViewDirection);
 }
 
 function setUpGame(){
@@ -104,7 +105,7 @@ function setUpGame(){
   gameMaps.push(createTestMap(textures, 'Test Map'));
 
   // Create user
-  user = new UserCameraClass({x: 0, y: 0,  fov: 60, rayCount: 1000, viewDirection: 0});
+  player = new Player({x: 0, y: 0});
 
   // Set active map
   setActiveMap(gameMaps, 'Test Map');
@@ -115,11 +116,11 @@ function draw() {
 
   const deltaTime = getDeltaTime(120);
 
-  const scene = user.spread(boundaries);
+  const scene = player.getScene(boundaries);
   render3D(scene);
-  user.draw(deltaTime);
+  player.update(deltaTime);
 
-  drawMinimap(main_ctx, boundaries, user);
+  drawMinimap(main_ctx, boundaries, player);
 
   drawFPS(main_canvas.width, main_canvas.height, main_ctx);
 

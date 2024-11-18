@@ -1,5 +1,5 @@
 import Boundaries from "../classes/BoundariesClass.js";
-import UserCameraClass from "../classes/UserCameraClass.js";
+import Player from "../classes/UserClass.js";
 
 /**
  * Resizes all canvas elements in the canvasArray to maintain the specified aspect ratio.
@@ -71,7 +71,7 @@ function drawBackground(background_ctx, height, width) {
  * 
  * @param {CanvasRenderingContext2D} ctx - The rendering context for the main canvas.
  * @param {Array<Boundaries>} boundaries - Array of boundary objects to draw on the minimap.
- * @param {UserCameraClass} user - The user object representing the camera's position and FOV.
+ * @param {Player} user - The user object representing the camera's position and FOV.
  * @param {number} minimapscale - The scale factor for the minimap.
  * @param {number} minimapX - The x-coordinate for the minimap's bottom-left corner.
  * @param {number} minimapY - The y-coordinate for the minimap's bottom-left corner.
@@ -115,8 +115,8 @@ function drawMinimap(ctx, boundaries, user) {
 
   // Draw user FOV (cone) on minimap
   const viewDirectionRad = user.viewDirection * Math.PI / 180;
-  const fovHalfRad = (user.fov / 2) * Math.PI / 180;
-  const fovLength = Math.min(50, miniMapSettings.radius); // FOV cone length
+  const fovHalfRad = (user.camera.fov / 2) * Math.PI / 180;
+  const fovLength = 50
 
   const fovStart = {
     x: centerX + fovLength * Math.cos(viewDirectionRad - fovHalfRad),
