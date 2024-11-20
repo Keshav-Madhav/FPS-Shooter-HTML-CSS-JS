@@ -124,6 +124,8 @@ function draw() {
 
   drawFPS(main_canvas.width, main_canvas.height, main_ctx);
 
+  boundaries[0].rotateBoundary(0.03);
+
   requestAnimationFrame(draw);
 }
 

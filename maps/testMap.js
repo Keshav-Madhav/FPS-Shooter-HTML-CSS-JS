@@ -31,6 +31,15 @@ function createTestMap(textures, name) {
     arcAngle: Math.PI / 3.18,
   }
 
+  const centerBoundary = new Boundaries(
+    circularChamberValues.centerX - circularChamberValues.radius,
+    circularChamberValues.centerY,
+    circularChamberValues.centerX + circularChamberValues.radius,
+    circularChamberValues.centerY,
+    wallTexture
+  );
+  boundaries.push(centerBoundary);
+
   for(let i = 1; i < 5; i++){
     const startAngle = Math.PI * (1.093 + (i * 0.5))
     boundaries.push(...createCircle({...circularChamberValues, startAngle}));

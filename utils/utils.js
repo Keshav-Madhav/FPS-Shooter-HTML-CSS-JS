@@ -116,7 +116,7 @@ function drawMinimap(ctx, boundaries, user) {
   // Draw user FOV (cone) on minimap
   const viewDirectionRad = user.viewDirection * Math.PI / 180;
   const fovHalfRad = (user.camera.fov / 2) * Math.PI / 180;
-  const fovLength = 50
+  const fovLength = 200
 
   const fovStart = {
     x: centerX + fovLength * Math.cos(viewDirectionRad - fovHalfRad),
@@ -127,7 +127,11 @@ function drawMinimap(ctx, boundaries, user) {
     y: centerY + fovLength * Math.sin(viewDirectionRad + fovHalfRad)
   };
 
-  ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+  const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, fovLength);
+  gradient.addColorStop(0, 'rgba(255, 255, 0, 0.5)'); // Inner part
+  gradient.addColorStop(1, 'rgba(255, 255, 0, 0)'); // Outer fade-out
+
+  ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.moveTo(centerX, centerY);
   ctx.lineTo(fovStart.x, fovStart.y);
