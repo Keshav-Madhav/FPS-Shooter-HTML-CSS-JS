@@ -68,21 +68,19 @@ function drawBackground(background_ctx, height, width) {
 
 /**
  * Draws a circular minimap on the main canvas, with a fixed player position and moving map.
- * 
+ *
  * @param {CanvasRenderingContext2D} ctx - The rendering context for the main canvas.
  * @param {Array<Boundaries>} boundaries - Array of boundary objects to draw on the minimap.
  * @param {Player} user - The user object representing the camera's position and FOV.
- * @param {number} minimapscale - The scale factor for the minimap.
- * @param {number} minimapX - The x-coordinate for the minimap's bottom-left corner.
- * @param {number} minimapY - The y-coordinate for the minimap's bottom-left corner.
+ * @param {Enemy} enemy - The enemy object to draw on the minimap.
  */
-function drawMinimap(ctx, boundaries, user) {
+function drawMinimap(ctx, boundaries, user, enemy) {
   const centerX = miniMapSettings.x / miniMapSettings.scale;
   const centerY = miniMapSettings.y / miniMapSettings.scale;
-  
+
   ctx.save();
   ctx.scale(miniMapSettings.scale, miniMapSettings.scale);
-  
+
   // Create circular clipping path at fixed position
   ctx.beginPath();
   ctx.arc(centerX, centerY, miniMapSettings.radius, 0, Math.PI * 2);
@@ -107,61 +105,74 @@ function drawMinimap(ctx, boundaries, user) {
     ctx.stroke();
   }
 
-  // Draw user position (now fixed at center)
+  // Draw user position (fixed at center)
   ctx.fillStyle = 'yellow';
   ctx.beginPath();
   ctx.arc(centerX, centerY, 2 / miniMapSettings.scale, 0, Math.PI * 2);
   ctx.fill();
 
   // Draw user FOV (cone) on minimap
-  const viewDirectionRad = user.viewDirection * Math.PI / 180;
-  const fovHalfRad = (user.camera.fov / 2) * Math.PI / 180;
-  const fovLength = 200
+  const userViewDirectionRad = (user.viewDirection * Math.PI) / 180;
+  const userFovHalfRad = (user.camera.fov / 2) * Math.PI / 180;
+  const userFovLength = 200;
 
-  const fovStart = {
-    x: centerX + fovLength * Math.cos(viewDirectionRad - fovHalfRad),
-    y: centerY + fovLength * Math.sin(viewDirectionRad - fovHalfRad)
+  const userFovStart = {
+    x: centerX + userFovLength * Math.cos(userViewDirectionRad - userFovHalfRad),
+    y: centerY + userFovLength * Math.sin(userViewDirectionRad - userFovHalfRad),
   };
-  const fovEnd = {
-    x: centerX + fovLength * Math.cos(viewDirectionRad + fovHalfRad),
-    y: centerY + fovLength * Math.sin(viewDirectionRad + fovHalfRad)
+  const userFovEnd = {
+    x: centerX + userFovLength * Math.cos(userViewDirectionRad + userFovHalfRad),
+    y: centerY + userFovLength * Math.sin(userViewDirectionRad + userFovHalfRad),
   };
 
-  const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, fovLength);
-  gradient.addColorStop(0, 'rgba(255, 255, 0, 0.5)'); // Inner part
-  gradient.addColorStop(1, 'rgba(255, 255, 0, 0)'); // Outer fade-out
+  const userGradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, userFovLength);
+  userGradient.addColorStop(0, 'rgba(255, 255, 0, 0.5)');
+  userGradient.addColorStop(1, 'rgba(255, 255, 0, 0)');
 
-  ctx.fillStyle = gradient;
+  ctx.fillStyle = userGradient;
   ctx.beginPath();
   ctx.moveTo(centerX, centerY);
-  ctx.lineTo(fovStart.x, fovStart.y);
-  ctx.lineTo(fovEnd.x, fovEnd.y);
+  ctx.lineTo(userFovStart.x, userFovStart.y);
+  ctx.lineTo(userFovEnd.x, userFovEnd.y);
   ctx.closePath();
   ctx.fill();
 
-  // Optional: Add a subtle grid or reference markers
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-  ctx.lineWidth = 0.5 / miniMapSettings.scale;
-  const gridSize = 50;
-  const gridExtent = miniMapSettings.radius * 2;
-  
-  // Draw vertical grid lines
-  for (let x = -gridExtent; x <= gridExtent; x += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(centerX + x + (offsetX % gridSize), centerY - miniMapSettings.radius);
-    ctx.lineTo(centerX + x + (offsetX % gridSize), centerY + miniMapSettings.radius);
-    ctx.stroke();
-  }
-  
-  // Draw horizontal grid lines
-  for (let y = -gridExtent; y <= gridExtent; y += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(centerX - miniMapSettings.radius, centerY + y + (offsetY % gridSize));
-    ctx.lineTo(centerX + miniMapSettings.radius, centerY + y + (offsetY % gridSize));
-    ctx.stroke();
-  }
+  // Draw enemy FOV (cone) on minimap
+  const enemyViewDirectionRad = (enemy.viewDirection * Math.PI) / 180;
+  const enemyFovHalfRad = (enemy.fov / 2) * Math.PI / 180;
+  const enemyFovLength = enemy.visibilityDistance;
+
+  const enemyFovStart = {
+    x: enemy.pos.x + offsetX + enemyFovLength * Math.cos(enemyViewDirectionRad - enemyFovHalfRad),
+    y: enemy.pos.y + offsetY + enemyFovLength * Math.sin(enemyViewDirectionRad - enemyFovHalfRad),
+  };
+  const enemyFovEnd = {
+    x: enemy.pos.x + offsetX + enemyFovLength * Math.cos(enemyViewDirectionRad + enemyFovHalfRad),
+    y: enemy.pos.y + offsetY + enemyFovLength * Math.sin(enemyViewDirectionRad + enemyFovHalfRad),
+  };
+
+  ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+  ctx.beginPath();
+  ctx.moveTo(enemy.pos.x + offsetX, enemy.pos.y + offsetY);
+  ctx.lineTo(enemyFovStart.x, enemyFovStart.y);
+  ctx.lineTo(enemyFovEnd.x, enemyFovEnd.y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Draw enemy position on minimap
+  ctx.fillStyle = 'red';
+  ctx.beginPath();
+  ctx.arc(
+    enemy.pos.x + offsetX, // Adjust enemy position based on offset
+    enemy.pos.y + offsetY,
+    1 / miniMapSettings.scale, // Size of the enemy marker
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
 
   ctx.restore();
 }
+
 
 export { resizeCanvas, drawBackground, drawMinimap };

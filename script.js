@@ -1,8 +1,8 @@
 import Boundaries from "./classes/BoundariesClass.js";
 import GameMap from "./classes/GameMapClass.js";
 import Textures from "./classes/TexturesClass.js";
-import UserCameraClass from "./classes/CameraClass.js";
 import Player from "./classes/UserClass.js";
+import EnemyClass from "./classes/EnemyClass.js";
 import { createTestMap } from "./maps/testMap.js";
 import { getDeltaTime } from "./utils/deltaTime.js";
 import { drawFPS } from "./utils/fpsDisplay.js";
@@ -19,6 +19,9 @@ let boundaries = [];
 
 /** @type {Player} */
 let player;
+
+/** @type {EnemyClass} */
+let enemy;
 
 /** @type {GameMap[]} */
 let gameMaps = []
@@ -93,8 +96,8 @@ function setActiveMap(gameMaps, mapName) {
   player.updateViewDirection(ActiveMap.userViewDirection);
 }
 
-function setUpGame(){
-  resizeCanvas({canvasArray: [main_canvas, background_canvas], ratio: 16/9});
+function setUpGame() {
+  resizeCanvas({ canvasArray: [main_canvas, background_canvas], ratio: 16 / 9 });
   drawBackground(background_ctx, background_canvas.height, background_canvas.width);
 
   // Add textures
@@ -105,7 +108,16 @@ function setUpGame(){
   gameMaps.push(createTestMap(textures, 'Test Map'));
 
   // Create user
-  player = new Player({x: 0, y: 0});
+  player = new Player({ x: 0, y: 0 });
+
+  // Create enemy
+  enemy = new EnemyClass({
+    x: 5, // Set initial position of the enemy
+    y: 5,
+    viewDirection: 0, // Initial view direction
+    fov:30, // Field of view
+    rayCount: 2 // Number of rays the enemy casts
+  });
 
   // Set active map
   setActiveMap(gameMaps, 'Test Map');
@@ -120,7 +132,16 @@ function draw() {
   render3D(scene);
   player.update(deltaTime);
 
-  drawMinimap(main_ctx, boundaries, player);
+  // Update enemy and check for player detection
+  enemy.update(deltaTime);
+  enemy.updateViewDirection(enemy.viewDirection + 0.5);
+  const detected = enemy.detectPlayer(player, boundaries);
+  if (detected.isDetected) {
+    enemy.viewDirection = Math.atan2(detected.userPosition.y - enemy.pos.y, detected.userPosition.x - enemy.pos.x) * 180 / Math.PI;
+    console.log(detected);
+  }
+
+  drawMinimap(main_ctx, boundaries, player, enemy); // Draw enemy on the minimap
 
   drawFPS(main_canvas.width, main_canvas.height, main_ctx);
 
