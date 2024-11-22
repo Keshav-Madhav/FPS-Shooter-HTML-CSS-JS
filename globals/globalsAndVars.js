@@ -10,9 +10,9 @@ let prevMouseX = 0;
 
 // Variables to store the minimap settings
 var miniMapSettings = {
-  x: 80,
-  y: 80,
-  scale: 0.15,
+  x: 110,
+  y: 110,
+  scale: 0.25,
   radius: 350
 }
 

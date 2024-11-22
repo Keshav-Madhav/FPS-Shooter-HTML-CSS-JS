@@ -143,20 +143,27 @@ function drawMinimap(ctx, boundaries, user, enemies) {
     const enemyFovHalfRad = (enemy.fov / 2) * Math.PI / 180;
     const enemyFovLength = enemy.visibilityDistance;
 
-    const enemyFovStart = {
-      x: enemy.pos.x + offsetX + enemyFovLength * Math.cos(enemyViewDirectionRad - enemyFovHalfRad),
-      y: enemy.pos.y + offsetY + enemyFovLength * Math.sin(enemyViewDirectionRad - enemyFovHalfRad),
-    };
-    const enemyFovEnd = {
-      x: enemy.pos.x + offsetX + enemyFovLength * Math.cos(enemyViewDirectionRad + enemyFovHalfRad),
-      y: enemy.pos.y + offsetY + enemyFovLength * Math.sin(enemyViewDirectionRad + enemyFovHalfRad),
-    };
-
     ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
     ctx.beginPath();
-    ctx.moveTo(enemy.pos.x + offsetX, enemy.pos.y + offsetY);
-    ctx.lineTo(enemyFovStart.x, enemyFovStart.y);
-    ctx.lineTo(enemyFovEnd.x, enemyFovEnd.y);
+    
+    // Start at enemy position
+    const centerX = enemy.pos.x + offsetX;
+    const centerY = enemy.pos.y + offsetY;
+    ctx.moveTo(centerX, centerY);
+
+    // Calculate arc start and end points
+    const startAngle = enemyViewDirectionRad - enemyFovHalfRad;
+    const endAngle = enemyViewDirectionRad + enemyFovHalfRad;
+
+    // Draw the arc
+    ctx.arc(
+      centerX, 
+      centerY, 
+      enemyFovLength, 
+      startAngle, 
+      endAngle
+    );
+
     ctx.closePath();
     ctx.fill();
 
@@ -164,9 +171,9 @@ function drawMinimap(ctx, boundaries, user, enemies) {
     ctx.fillStyle = 'red';
     ctx.beginPath();
     ctx.arc(
-      enemy.pos.x + offsetX, // Adjust enemy position based on offset
-      enemy.pos.y + offsetY,
-      1 / miniMapSettings.scale, // Size of the enemy marker
+      centerX,
+      centerY,
+      1.5 / miniMapSettings.scale,
       0,
       Math.PI * 2
     );
