@@ -3,7 +3,7 @@ import RayClass from './RayClass.js';
 
 class EnemyClass {
   /**
-   * Creates an enemy instance with vision and movement capabilities
+   * Creates an enemy instance with vision and automated movement capabilities
    * @param {Object} options - Enemy configuration
    * @param {number} options.x - Initial x position
    * @param {number} options.y - Initial y position
@@ -11,10 +11,12 @@ class EnemyClass {
    * @param {number} options.fov - Field of view in degrees
    * @param {number} options.rayCount - Number of rays for vision
    * @param {number} options.visibilityDistance - Maximum distance to detect the user
-   * @param {number} options.moveSpeed - Movement speed multiplier
    * @param {number[]} [options.rotationStops] - Array of angles for rotation animation
    * @param {number} [options.rotationTime=1] - Duration in seconds for each rotation step
    * @param {boolean} [options.repeatRotation=false] - Whether to repeat the rotation animation
+   * @param {Array<{x: number, y: number}>} [options.moveStops] - Array of relative movement vectors
+   * @param {number} [options.moveTime=1] - Duration in seconds for each movement step
+   * @param {boolean} [options.repeatMovement=false] - Whether to repeat the movement pattern
    */
   constructor({
     x,
@@ -23,35 +25,43 @@ class EnemyClass {
     fov = 60,
     rayCount = 200,
     visibilityDistance = 300,
-    moveSpeed = 0,
     rotationStops = [],
     rotationTime = 1,
-    repeatRotation = false
+    repeatRotation = false,
+    moveStops = [],
+    moveTime = 1,
+    repeatMovement = false
   }) {
     this.pos = { x, y };
+    this.initialPos = { x, y };
     this.viewDirection = viewDirection;
     this.initialViewDirection = viewDirection;
     this.fov = fov;
     this.visibilityDistance = visibilityDistance;
-    this.moveSpeed = moveSpeed;
 
     // Rotation animation properties
     this.rotationStops = rotationStops;
     this.rotationTime = rotationTime;
     this.repeatRotation = repeatRotation;
     this.currentRotationIndex = 0;
-    this.accumulatedTime = 0;
-    this.lastFrameTime = performance.now() / 1000; // Convert to seconds
+    this.rotationAccumulatedTime = 0;
+    this.lastRotationFrameTime = performance.now() / 1000;
     this.isRotating = rotationStops.length > 0;
     this.currentAngle = viewDirection;
     this.targetAngle = this.calculateNextTargetAngle();
-    this.wasDetected = false; // Track if enemy was previously detecting player
 
-    // Movement state
-    this.moveForwards = false;
-    this.moveBackwards = false;
-    this.moveRight = false;
-    this.moveLeft = false;
+    // Movement animation properties
+    this.moveStops = moveStops;
+    this.moveTime = moveTime;
+    this.repeatMovement = repeatMovement;
+    this.currentMoveIndex = 0;
+    this.moveAccumulatedTime = 0;
+    this.lastMoveFrameTime = performance.now() / 1000;
+    this.isMoving = moveStops.length > 0;
+    this.currentPos = { ...this.pos };
+    this.targetPos = this.calculateNextTargetPosition();
+
+    this.wasDetected = false; // Track if enemy was previously detecting player
 
     // Vision system
     this.camera = new CameraClass({
@@ -81,14 +91,34 @@ class EnemyClass {
   }
 
   /**
+   * Calculates the next target position based on current movement index
+   * @private
+   * @returns {Object} The next target position {x, y}
+   */
+  calculateNextTargetPosition() {
+    if (!this.isMoving || this.moveStops.length === 0) {
+      return { ...this.pos };
+    }
+
+    let accumulatedX = this.initialPos.x;
+    let accumulatedY = this.initialPos.y;
+    
+    for (let i = 0; i <= this.currentMoveIndex; i++) {
+      accumulatedX += this.moveStops[i].x;
+      accumulatedY += this.moveStops[i].y;
+    }
+    
+    return { x: accumulatedX, y: accumulatedY };
+  }
+
+  /**
    * Updates the enemy's position and vision
    * @param {number} normalizedDeltaTime - Normalized delta time from the game loop
    */
   update(normalizedDeltaTime) {
-    this.updatePosition(normalizedDeltaTime);
-    
-    // Only update rotation if not currently detecting a player
+    // Only update movement and rotation if not currently detecting a player
     if (!this.wasDetected) {
+      this.updateMovement();
       this.updateRotation();
     }
     
@@ -102,18 +132,18 @@ class EnemyClass {
   updateRotation() {
     if (!this.isRotating) return;
 
-    const currentTime = performance.now() / 1000; // Convert to seconds
-    const frameDeltaTime = currentTime - this.lastFrameTime;
-    this.accumulatedTime += frameDeltaTime;
-    this.lastFrameTime = currentTime;
+    const currentTime = performance.now() / 1000;
+    const frameDeltaTime = currentTime - this.lastRotationFrameTime;
+    this.rotationAccumulatedTime += frameDeltaTime;
+    this.lastRotationFrameTime = currentTime;
 
-    const progress = Math.min(this.accumulatedTime / this.rotationTime, 1);
+    const progress = Math.min(this.rotationAccumulatedTime / this.rotationTime, 1);
 
     if (progress >= 1) {
       // Complete current rotation
       this.currentAngle = this.targetAngle;
       this.viewDirection = this.currentAngle;
-      this.accumulatedTime = 0;
+      this.rotationAccumulatedTime = 0;
       this.currentRotationIndex++;
 
       // Check if we should continue rotating
@@ -140,39 +170,47 @@ class EnemyClass {
   }
 
   /**
-   * Updates the enemy's position based on movement state
-   * @param {number} normalizedDeltaTime - Normalized delta time from the game loop
+   * Updates the movement animation using real time
    * @private
    */
-  updatePosition(normalizedDeltaTime) {
-    const moveDirection = Math.atan2(
-      Math.sin((this.viewDirection * Math.PI) / 180),
-      Math.cos((this.viewDirection * Math.PI) / 180)
-    );
-    const strafeDirection = moveDirection + Math.PI / 2;
+  updateMovement() {
+    if (!this.isMoving) return;
 
-    let dx = 0;
-    let dy = 0;
+    const currentTime = performance.now() / 1000;
+    const frameDeltaTime = currentTime - this.lastMoveFrameTime;
+    this.moveAccumulatedTime += frameDeltaTime;
+    this.lastMoveFrameTime = currentTime;
 
-    if (this.moveForwards) {
-      dx += this.moveSpeed * Math.cos(moveDirection);
-      dy += this.moveSpeed * Math.sin(moveDirection);
-    }
-    if (this.moveBackwards) {
-      dx -= this.moveSpeed * Math.cos(moveDirection);
-      dy -= this.moveSpeed * Math.sin(moveDirection);
-    }
-    if (this.moveRight) {
-      dx += this.moveSpeed * Math.cos(strafeDirection);
-      dy += this.moveSpeed * Math.sin(strafeDirection);
-    }
-    if (this.moveLeft) {
-      dx -= this.moveSpeed * Math.cos(strafeDirection);
-      dy -= this.moveSpeed * Math.sin(strafeDirection);
-    }
+    const progress = Math.min(this.moveAccumulatedTime / this.moveTime, 1);
 
-    this.pos.x += dx * normalizedDeltaTime;
-    this.pos.y += dy * normalizedDeltaTime;
+    if (progress >= 1) {
+      // Complete current movement
+      this.pos = { ...this.targetPos };
+      this.currentPos = { ...this.targetPos };
+      this.moveAccumulatedTime = 0;
+      this.currentMoveIndex++;
+
+      // Check if we should continue moving
+      if (this.currentMoveIndex >= this.moveStops.length) {
+        if (this.repeatMovement) {
+          // Reset to start for repeated animation
+          this.currentMoveIndex = 0;
+          this.currentPos = { ...this.targetPos };
+          this.targetPos = this.calculateNextTargetPosition();
+        } else {
+          // Stop movement
+          this.isMoving = false;
+          return;
+        }
+      } else {
+        // Move to next position in sequence
+        this.targetPos = this.calculateNextTargetPosition();
+      }
+    } else {
+      // Interpolate between current and target position
+      this.pos.x = this.currentPos.x + (this.targetPos.x - this.currentPos.x) * progress;
+      this.pos.y = this.currentPos.y + (this.targetPos.y - this.currentPos.y) * progress;
+    }
   }
 
   /**

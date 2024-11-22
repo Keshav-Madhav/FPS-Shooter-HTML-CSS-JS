@@ -168,13 +168,26 @@ function createTestMap(textures, name) {
   // Enemy in the west corridor
   enemies.push(new EnemyClass({
     x: mapWidth / 6 - 30,
-    y: mapHeight / 2,
+    y: mapHeight / 2 - 15,
     viewDirection: 0, // Facing right
-    fov: 45,
+    visibilityDistance: 200,
+    fov: 35,
     rayCount: 2,
-    rotationStops: [90, 0, -90, 0, 0, 0, -90, 0, 90, 0, 0, 0],
-    rotationTime: 1,
-    repeatRotation: true
+    rotationStops: [0, 90, 0, 90, 0, 90, 0, 90],
+    rotationTime: 2,
+    repeatRotation: true,
+    moveStops: [
+      { x: 300, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: 30 },
+      { x: 0, y: 0 },
+      { x: -300, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: -30 },
+      { x: 0, y: 0 }
+    ],
+    moveTime: 2,
+    repeatMovement: true,
   }));
 
   // Patrolling enemy in the east corridor
