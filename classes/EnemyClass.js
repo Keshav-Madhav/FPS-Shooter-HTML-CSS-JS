@@ -125,10 +125,23 @@ class EnemyClass {
     this.camera.update(this.pos, this.viewDirection);
   }
 
-  /**
-   * Updates the rotation animation using real time
-   * @private
-   */
+  calculateNextTargetAngle() {
+    if (!this.isRotating || this.rotationStops.length === 0) {
+      return this.viewDirection;
+    }
+
+    // Instead of accumulating angles, we'll keep track of absolute angles
+    let targetAngle = this.initialViewDirection;
+    const currentRotation = this.rotationStops[this.currentRotationIndex];
+    
+    // Calculate the absolute angle based on the rotation pattern
+    for (let i = 0; i <= this.currentRotationIndex; i++) {
+      targetAngle = (targetAngle + this.rotationStops[i]) % 360;
+    }
+
+    return targetAngle;
+  }
+
   updateRotation() {
     if (!this.isRotating) return;
 
@@ -151,7 +164,7 @@ class EnemyClass {
         if (this.repeatRotation) {
           // Reset to start for repeated animation
           this.currentRotationIndex = 0;
-          this.currentAngle = this.targetAngle;
+          this.currentAngle = this.targetAngle % 360; // Normalize the angle
           this.targetAngle = this.calculateNextTargetAngle();
         } else {
           // Stop rotation
@@ -164,8 +177,18 @@ class EnemyClass {
       }
     } else {
       // Interpolate between current and target angle
-      const angleDiff = this.targetAngle - this.currentAngle;
-      this.viewDirection = this.currentAngle + (angleDiff * progress);
+      let angleDiff = this.targetAngle - this.currentAngle;
+      
+      // Ensure we rotate the shortest direction
+      if (Math.abs(angleDiff) > 180) {
+        if (angleDiff > 0) {
+          angleDiff -= 360;
+        } else {
+          angleDiff += 360;
+        }
+      }
+      
+      this.viewDirection = (this.currentAngle + (angleDiff * progress)) % 360;
     }
   }
 
