@@ -1,13 +1,6 @@
 import CameraClass from './CameraClass.js';
 import RayClass from './RayClass.js';
 
-/**
- * @typedef {Object} EnemyDetection
- * @property {boolean} isDetected - Whether the user is detected.
- * @property {number|null} distance - The distance to the user if detected, or `null` otherwise.
- * @property {Object|null} userPosition - The user's position {x, y} if detected, or `null` otherwise.
- */
-
 class EnemyClass {
   /**
    * Creates an enemy instance with vision and movement capabilities
@@ -19,6 +12,9 @@ class EnemyClass {
    * @param {number} options.rayCount - Number of rays for vision
    * @param {number} options.visibilityDistance - Maximum distance to detect the user
    * @param {number} options.moveSpeed - Movement speed multiplier
+   * @param {number[]} [options.rotationStops] - Array of angles for rotation animation
+   * @param {number} [options.rotationTime=1] - Duration in seconds for each rotation step
+   * @param {boolean} [options.repeatRotation=false] - Whether to repeat the rotation animation
    */
   constructor({
     x,
@@ -27,13 +23,29 @@ class EnemyClass {
     fov = 60,
     rayCount = 200,
     visibilityDistance = 300,
-    moveSpeed = 0
+    moveSpeed = 0,
+    rotationStops = [],
+    rotationTime = 1,
+    repeatRotation = false
   }) {
     this.pos = { x, y };
     this.viewDirection = viewDirection;
+    this.initialViewDirection = viewDirection;
     this.fov = fov;
     this.visibilityDistance = visibilityDistance;
     this.moveSpeed = moveSpeed;
+
+    // Rotation animation properties
+    this.rotationStops = rotationStops;
+    this.rotationTime = rotationTime;
+    this.repeatRotation = repeatRotation;
+    this.currentRotationIndex = 0;
+    this.accumulatedTime = 0;
+    this.lastFrameTime = performance.now() / 1000; // Convert to seconds
+    this.isRotating = rotationStops.length > 0;
+    this.currentAngle = viewDirection;
+    this.targetAngle = this.calculateNextTargetAngle();
+    this.wasDetected = false; // Track if enemy was previously detecting player
 
     // Movement state
     this.moveForwards = false;
@@ -52,20 +64,87 @@ class EnemyClass {
   }
 
   /**
-   * Updates the enemy's position and vision
-   * @param {number} deltaTime - Time elapsed since the last frame
+   * Calculates the next target angle based on current rotation index
+   * @private
+   * @returns {number} The next target angle
    */
-  update(deltaTime) {
-    this.updatePosition(deltaTime);
+  calculateNextTargetAngle() {
+    if (!this.isRotating || this.rotationStops.length === 0) {
+      return this.viewDirection;
+    }
+
+    let accumulatedAngle = this.initialViewDirection;
+    for (let i = 0; i <= this.currentRotationIndex; i++) {
+      accumulatedAngle += this.rotationStops[i];
+    }
+    return accumulatedAngle;
+  }
+
+  /**
+   * Updates the enemy's position and vision
+   * @param {number} normalizedDeltaTime - Normalized delta time from the game loop
+   */
+  update(normalizedDeltaTime) {
+    this.updatePosition(normalizedDeltaTime);
+    
+    // Only update rotation if not currently detecting a player
+    if (!this.wasDetected) {
+      this.updateRotation();
+    }
+    
     this.camera.update(this.pos, this.viewDirection);
   }
 
   /**
-   * Updates the enemy's position based on movement state
-   * @param {number} deltaTime - Time elapsed since the last frame
+   * Updates the rotation animation using real time
    * @private
    */
-  updatePosition(deltaTime) {
+  updateRotation() {
+    if (!this.isRotating) return;
+
+    const currentTime = performance.now() / 1000; // Convert to seconds
+    const frameDeltaTime = currentTime - this.lastFrameTime;
+    this.accumulatedTime += frameDeltaTime;
+    this.lastFrameTime = currentTime;
+
+    const progress = Math.min(this.accumulatedTime / this.rotationTime, 1);
+
+    if (progress >= 1) {
+      // Complete current rotation
+      this.currentAngle = this.targetAngle;
+      this.viewDirection = this.currentAngle;
+      this.accumulatedTime = 0;
+      this.currentRotationIndex++;
+
+      // Check if we should continue rotating
+      if (this.currentRotationIndex >= this.rotationStops.length) {
+        if (this.repeatRotation) {
+          // Reset to start for repeated animation
+          this.currentRotationIndex = 0;
+          this.currentAngle = this.targetAngle;
+          this.targetAngle = this.calculateNextTargetAngle();
+        } else {
+          // Stop rotation
+          this.isRotating = false;
+          return;
+        }
+      } else {
+        // Move to next angle in sequence
+        this.targetAngle = this.calculateNextTargetAngle();
+      }
+    } else {
+      // Interpolate between current and target angle
+      const angleDiff = this.targetAngle - this.currentAngle;
+      this.viewDirection = this.currentAngle + (angleDiff * progress);
+    }
+  }
+
+  /**
+   * Updates the enemy's position based on movement state
+   * @param {number} normalizedDeltaTime - Normalized delta time from the game loop
+   * @private
+   */
+  updatePosition(normalizedDeltaTime) {
     const moveDirection = Math.atan2(
       Math.sin((this.viewDirection * Math.PI) / 180),
       Math.cos((this.viewDirection * Math.PI) / 180)
@@ -92,33 +171,24 @@ class EnemyClass {
       dy -= this.moveSpeed * Math.sin(strafeDirection);
     }
 
-    this.pos.x += dx * deltaTime;
-    this.pos.y += dy * deltaTime;
-  }
-
-  /**
-   * Updates the enemy's view direction
-   * @param {number} newDirection - New view direction in degrees
-   */
-  updateViewDirection(newDirection) {
-    this.viewDirection = ((newDirection % 360) + 360) % 360;
-    this.camera.update(this.pos, this.viewDirection);
+    this.pos.x += dx * normalizedDeltaTime;
+    this.pos.y += dy * normalizedDeltaTime;
   }
 
   /**
    * Detects if the player is visible to the enemy.
    * @param {Player} player - The player object to check for detection.
    * @param {Array<Boundaries>} boundaries - Array of boundary objects for the scene.
-   * @param {CameraClass} camera - Camera instance for raycasting.
    * @returns {EnemyDetection} Detection result.
    */
-  detectPlayer(player, boundaries, camera) {
+  detectPlayer(player, boundaries) {
     const dx = player.pos.x - this.pos.x;
     const dy = player.pos.y - this.pos.y;
     const distance = Math.hypot(dx, dy);
 
     // Check if the player is within visibility distance
     if (distance > this.visibilityDistance) {
+      this.wasDetected = false;
       return { isDetected: false, distance: null, userPosition: null, relativeAngle: null };
     }
 
@@ -153,6 +223,7 @@ class EnemyClass {
 
       // If no closer boundary, the player is visible
       if (!closestBoundary) {
+        this.wasDetected = true;
         return {
           isDetected: true,
           distance,
@@ -163,6 +234,7 @@ class EnemyClass {
     }
 
     // Player not detected
+    this.wasDetected = false;
     return { isDetected: false, distance: null, userPosition: null, relativeAngle: null };
   }
 }

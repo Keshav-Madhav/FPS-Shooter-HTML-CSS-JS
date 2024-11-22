@@ -135,7 +135,7 @@ function createTestMap(textures, name) {
     y: mapHeight / 2,
     viewDirection: Math.PI, // Facing left
     fov: 60,
-    rayCount: 3
+    rayCount: 3,
   }));
 
   // Enemy in the north room
@@ -144,7 +144,7 @@ function createTestMap(textures, name) {
     y: mapHeight / 4 - 115,
     viewDirection: Math.PI / 2, // Facing down
     fov: 45,
-    rayCount: 2
+    rayCount: 2,
   }));
 
   // Enemy in the south room
@@ -153,7 +153,7 @@ function createTestMap(textures, name) {
     y: (mapHeight * 3) / 4 + 60,
     viewDirection: -Math.PI / 2, // Facing up
     fov: 45,
-    rayCount: 2
+    rayCount: 2,
   }));
 
   // Enemy in the east circular room
@@ -162,7 +162,7 @@ function createTestMap(textures, name) {
     y: mapHeight / 2,
     viewDirection: Math.PI, // Facing left
     fov: 90,
-    rayCount: 4
+    rayCount: 4,
   }));
 
   // Enemy in the west corridor
@@ -171,7 +171,10 @@ function createTestMap(textures, name) {
     y: mapHeight / 2,
     viewDirection: 0, // Facing right
     fov: 45,
-    rayCount: 2
+    rayCount: 2,
+    rotationStops: [90, 0, -90, 0, 0, 0, -90, 0, 90, 0, 0, 0],
+    rotationTime: 1,
+    repeatRotation: true
   }));
 
   // Patrolling enemy in the east corridor
