@@ -72,9 +72,9 @@ function drawBackground(background_ctx, height, width) {
  * @param {CanvasRenderingContext2D} ctx - The rendering context for the main canvas.
  * @param {Array<Boundaries>} boundaries - Array of boundary objects to draw on the minimap.
  * @param {Player} user - The user object representing the camera's position and FOV.
- * @param {Enemy} enemy - The enemy object to draw on the minimap.
+ * @param {EnemyClass[]} enemies - Array of enemy objects to draw on the minimap.
  */
-function drawMinimap(ctx, boundaries, user, enemy) {
+function drawMinimap(ctx, boundaries, user, enemies) {
   const centerX = miniMapSettings.x / miniMapSettings.scale;
   const centerY = miniMapSettings.y / miniMapSettings.scale;
 
@@ -138,38 +138,40 @@ function drawMinimap(ctx, boundaries, user, enemy) {
   ctx.fill();
 
   // Draw enemy FOV (cone) on minimap
-  const enemyViewDirectionRad = (enemy.viewDirection * Math.PI) / 180;
-  const enemyFovHalfRad = (enemy.fov / 2) * Math.PI / 180;
-  const enemyFovLength = enemy.visibilityDistance;
+  enemies.forEach(enemy => {
+    const enemyViewDirectionRad = (enemy.viewDirection * Math.PI) / 180;
+    const enemyFovHalfRad = (enemy.fov / 2) * Math.PI / 180;
+    const enemyFovLength = enemy.visibilityDistance;
 
-  const enemyFovStart = {
-    x: enemy.pos.x + offsetX + enemyFovLength * Math.cos(enemyViewDirectionRad - enemyFovHalfRad),
-    y: enemy.pos.y + offsetY + enemyFovLength * Math.sin(enemyViewDirectionRad - enemyFovHalfRad),
-  };
-  const enemyFovEnd = {
-    x: enemy.pos.x + offsetX + enemyFovLength * Math.cos(enemyViewDirectionRad + enemyFovHalfRad),
-    y: enemy.pos.y + offsetY + enemyFovLength * Math.sin(enemyViewDirectionRad + enemyFovHalfRad),
-  };
+    const enemyFovStart = {
+      x: enemy.pos.x + offsetX + enemyFovLength * Math.cos(enemyViewDirectionRad - enemyFovHalfRad),
+      y: enemy.pos.y + offsetY + enemyFovLength * Math.sin(enemyViewDirectionRad - enemyFovHalfRad),
+    };
+    const enemyFovEnd = {
+      x: enemy.pos.x + offsetX + enemyFovLength * Math.cos(enemyViewDirectionRad + enemyFovHalfRad),
+      y: enemy.pos.y + offsetY + enemyFovLength * Math.sin(enemyViewDirectionRad + enemyFovHalfRad),
+    };
 
-  ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
-  ctx.beginPath();
-  ctx.moveTo(enemy.pos.x + offsetX, enemy.pos.y + offsetY);
-  ctx.lineTo(enemyFovStart.x, enemyFovStart.y);
-  ctx.lineTo(enemyFovEnd.x, enemyFovEnd.y);
-  ctx.closePath();
-  ctx.fill();
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+    ctx.beginPath();
+    ctx.moveTo(enemy.pos.x + offsetX, enemy.pos.y + offsetY);
+    ctx.lineTo(enemyFovStart.x, enemyFovStart.y);
+    ctx.lineTo(enemyFovEnd.x, enemyFovEnd.y);
+    ctx.closePath();
+    ctx.fill();
 
-  // Draw enemy position on minimap
-  ctx.fillStyle = 'red';
-  ctx.beginPath();
-  ctx.arc(
-    enemy.pos.x + offsetX, // Adjust enemy position based on offset
-    enemy.pos.y + offsetY,
-    1 / miniMapSettings.scale, // Size of the enemy marker
-    0,
-    Math.PI * 2
-  );
-  ctx.fill();
+    // Draw enemy position on minimap
+    ctx.fillStyle = 'red';
+    ctx.beginPath();
+    ctx.arc(
+      enemy.pos.x + offsetX, // Adjust enemy position based on offset
+      enemy.pos.y + offsetY,
+      1 / miniMapSettings.scale, // Size of the enemy marker
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  });
 
   ctx.restore();
 }

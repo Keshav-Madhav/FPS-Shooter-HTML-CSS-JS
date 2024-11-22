@@ -1,4 +1,5 @@
 import Boundaries from "../classes/BoundariesClass.js";
+import EnemyClass from "../classes/EnemyClass.js";
 import GameMap from "../classes/GameMapClass.js";
 import Textures from "../classes/TexturesClass.js";
 import { createCircle, createCorridor, createBoundaryPath } from "../utils/WallGenerators.js";
@@ -11,6 +12,7 @@ import { createCircle, createCorridor, createBoundaryPath } from "../utils/WallG
  */
 function createTestMap(textures, name) {
   const boundaries = [];
+  const enemies = [];
   const wallTexture = textures.getTexture("wall");
   const edgeTexture = textures.getTexture("edge");
   const mapWidth = 1900;
@@ -126,9 +128,64 @@ function createTestMap(textures, name) {
   ];
   rooms.forEach(room => boundaries.push(...room));
 
+  // Add enemies
+
+  enemies.push(new EnemyClass({
+    x: mapWidth / 2.5,
+    y: mapHeight / 2,
+    viewDirection: Math.PI, // Facing left
+    fov: 60,
+    rayCount: 3
+  }));
+
+  // Enemy in the north room
+  enemies.push(new EnemyClass({
+    x: mapWidth / 2.5,
+    y: mapHeight / 4 - 115,
+    viewDirection: Math.PI / 2, // Facing down
+    fov: 45,
+    rayCount: 2
+  }));
+
+  // Enemy in the south room
+  enemies.push(new EnemyClass({
+    x: mapWidth / 2.5,
+    y: (mapHeight * 3) / 4 + 60,
+    viewDirection: -Math.PI / 2, // Facing up
+    fov: 45,
+    rayCount: 2
+  }));
+
+  // Enemy in the east circular room
+  enemies.push(new EnemyClass({
+    x: (mapWidth * 3) / 4.5 + 197,
+    y: mapHeight / 2,
+    viewDirection: Math.PI, // Facing left
+    fov: 90,
+    rayCount: 4
+  }));
+
+  // Enemy in the west corridor
+  enemies.push(new EnemyClass({
+    x: mapWidth / 6 - 30,
+    y: mapHeight / 2,
+    viewDirection: 0, // Facing right
+    fov: 45,
+    rayCount: 2
+  }));
+
+  // Patrolling enemy in the east corridor
+  enemies.push(new EnemyClass({
+    x: (mapWidth * 3) / 4.5 - 100,
+    y: mapHeight / 2,
+    viewDirection: 0, // Facing right
+    fov: 70,
+    rayCount: 3
+  }));
 
   const testMap = new GameMap(name, mapWidth, mapHeight, { x: mapWidth / 6 - 30, y: mapHeight / 4 + 20 });
   testMap.addBoundaries(boundaries);
+  testMap.addEnemies(enemies);
 
   return testMap;
 }

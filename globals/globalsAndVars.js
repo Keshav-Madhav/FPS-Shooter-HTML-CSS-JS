@@ -17,5 +17,5 @@ var miniMapSettings = {
 }
 
 // Sensitivity factor for rotation speed
-const sensitivity = 0.3;
+const sensitivity = 0.2;
 let prevTime = performance.now(); // Track the previous time

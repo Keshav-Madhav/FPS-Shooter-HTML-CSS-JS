@@ -17,11 +17,11 @@ window.addEventListener('resize', ()=>{
 /** @type {Boundaries[]} */
 let boundaries = [];
 
+/** @type {EnemyClass[]} */
+let enemies = [];
+
 /** @type {Player} */
 let player;
-
-/** @type {EnemyClass} */
-let enemy;
 
 /** @type {GameMap[]} */
 let gameMaps = []
@@ -91,7 +91,8 @@ function updatePosition(e) {
 
 function setActiveMap(gameMaps, mapName) {
   ActiveMap = gameMaps.find(map => map.name === mapName);
-  boundaries = ActiveMap.boundaries;
+  boundaries = ActiveMap.getBoundaries();
+  enemies = ActiveMap.getEnemies();
   player.pos = {x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y};
   player.updateViewDirection(ActiveMap.userViewDirection);
 }
@@ -110,15 +111,6 @@ function setUpGame() {
   // Create user
   player = new Player({ x: 0, y: 0 });
 
-  // Create enemy
-  enemy = new EnemyClass({
-    x: 5, // Set initial position of the enemy
-    y: 5,
-    viewDirection: 0, // Initial view direction
-    fov:30, // Field of view
-    rayCount: 2 // Number of rays the enemy casts
-  });
-
   // Set active map
   setActiveMap(gameMaps, 'Test Map');
 }
@@ -132,16 +124,16 @@ function draw() {
   render3D(scene);
   player.update(deltaTime);
 
-  // Update enemy and check for player detection
-  enemy.update(deltaTime);
-  enemy.updateViewDirection(enemy.viewDirection + 0.5);
-  const detected = enemy.detectPlayer(player, boundaries);
-  if (detected.isDetected) {
-    enemy.viewDirection = Math.atan2(detected.userPosition.y - enemy.pos.y, detected.userPosition.x - enemy.pos.x) * 180 / Math.PI;
-    console.log(detected);
-  }
+  enemies.forEach(enemy => {
+    enemy.update(deltaTime);
+    const detected = enemy.detectPlayer(player, boundaries);
+    if (detected.isDetected) {
+      enemy.viewDirection = Math.atan2(detected.userPosition.y - enemy.pos.y, detected.userPosition.x - enemy.pos.x) * 180 / Math.PI;
+      console.log(detected);
+    }
+  });
 
-  drawMinimap(main_ctx, boundaries, player, enemy); // Draw enemy on the minimap
+  drawMinimap(main_ctx, boundaries, player, enemies);
 
   drawFPS(main_canvas.width, main_canvas.height, main_ctx);
 
