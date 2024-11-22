@@ -5,79 +5,86 @@ class Boundaries {
   /**
    * Creates a new boundary.
    * 
-   * @param {number} x1 - The x-coordinate of the first point.
-   * @param {number} y1 - The y-coordinate of the first point.
-   * @param {number} x2 - The x-coordinate of the second point.
-   * @param {number} y2 - The y-coordinate of the second point.
-   * @param {HTMLImageElement} texture - The texture of the boundary.
-   * @param {Object} [options] - Optional parameters for the boundary.
-   * @param {number} [options.rotateAngle=0] - The initial rotation angle in radians.
-   * @param {number} [options.rotateSpeed=0] - The speed of rotation in radians per frame.
-   * @param {Object} [options.origin=null] - The origin point for rotation.
-   * @param {number} [options.origin.x] - The x-coordinate of the rotation origin.
-   * @param {number} [options.origin.y] - The y-coordinate of the rotation origin.
+   * @param {Object} setUp - The configuration object.
+   * @param {number} setUp.x1 - The x-coordinate of point A.
+   * @param {number} setUp.y1 - The y-coordinate of point A.
+   * @param {number} setUp.x2 - The x-coordinate of point B.
+   * @param {number} setUp.y2 - The y-coordinate of point B.
+   * @param {HTMLImageElement} setUp.texture - The texture image of the boundary.
+   * @param {Object} [setUp.options] - Additional options.
+   * @param {string} [setUp.options.uniqueID] - A unique identifier for the boundary.
    */
-  constructor(x1, y1, x2, y2, texture, options = {}) {
+  constructor({ x1, y1, x2, y2, texture , options = {} }) {
     this.a = { x: x1, y: y1 }; // Point A of the boundary
     this.b = { x: x2, y: y2 }; // Point B of the boundary
+    this.originalA = { x: x1, y: y1 }; // Original point A for rotation
+    this.originalB = { x: x2, y: y2 }; // Original point B for rotation
+    this.angle = 0; // Rotation angle
     this.texture = texture; // Boundary texture
-
-    // Optional rotation parameters
-    this.rotateAngle = options.rotateAngle || 0; // Initial rotation angle
-    this.rotateSpeed = options.rotateSpeed || 0; // Rotation speed (radians per frame)
-    this.origin = options.origin || null; // Rotation origin (optional)
+    this.uniqueID = options.uniqueID || null; // Unique identifier
   }
 
   /**
-   * Rotates the boundary around a given angle and origin.
+   * Updates the position of the boundary by putting center at (x, y).
+  */ 
+  updatePosition(x, y) {
+    // Calculate the center of the boundary
+    const centerX = (this.a.x + this.b.x) / 2;
+    const centerY = (this.a.y + this.b.y) / 2;
+
+    // Calculate the offset to move the center to (x, y)
+    const dx = x - centerX;
+    const dy = y - centerY;
+
+    // Update the positions of points A and B
+    this.a.x += dx;
+    this.a.y += dy;
+    this.b.x += dx;
+    this.b.y += dy;
+
+    // Update the original positions
+    this.originalA.x += dx;
+    this.originalA.y += dy;
+    this.originalB.x += dx;
+    this.originalB.y += dy;
+  }
+
+  /**
+   * Rotates the boundary around its center by a specified angle.
    * 
-   * @param {number} angle - The angle to rotate the boundary by, in radians.
-   * @param {Object|null} [origin=null] - The origin point for the rotation. 
-   * If not provided, defaults to the wall's center or the specified origin in `options`.
-   * @param {number} origin.x - The x-coordinate of the rotation origin.
-   * @param {number} origin.y - The y-coordinate of the rotation origin.
+   * @param {number} angle - The angle of rotation in degrees.
    */
-  rotateBoundary(angle, origin = null) {
-    let originX, originY;
+  rotateBoundary(angle) {
+    // Convert angle to radians
+    const angleRad = angle * (Math.PI / 180);
 
-    // Determine rotation origin
-    if (origin) {
-      originX = origin.x;
-      originY = origin.y;
-    } else if (this.origin) {
-      // Use the predefined rotation origin if available
-      originX = this.origin.x;
-      originY = this.origin.y;
-    } else {
-      originX = (this.a.x + this.b.x) / 2;
-      originY = (this.a.y + this.b.y) / 2;
-    }
+    // Calculate the center point
+    const centerX = (this.originalA.x + this.originalB.x) / 2;
+    const centerY = (this.originalA.y + this.originalB.y) / 2;
 
-    const rotatePoint = (point, angle, origin) => {
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      const dx = point.x - origin.x;
-      const dy = point.y - origin.y;
-
+    // Rotation matrices to rotate points around the center
+    const rotatePoint = (x, y) => {
+      const dx = x - centerX;
+      const dy = y - centerY;
+      
       return {
-        x: origin.x + dx * cos - dy * sin,
-        y: origin.y + dx * sin + dy * cos,
+        x: centerX + dx * Math.cos(angleRad) - dy * Math.sin(angleRad),
+        y: centerY + dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
       };
     };
 
-    this.a = rotatePoint(this.a, angle, { x: originX, y: originY });
-    this.b = rotatePoint(this.b, angle, { x: originX, y: originY });
-  }
+    // Rotate both points using the rotation matrix
+    const rotatedA = rotatePoint(this.originalA.x, this.originalA.y);
+    const rotatedB = rotatePoint(this.originalB.x, this.originalB.y);
 
-  /**
-   * Updates the rotation of the boundary if a rotateSpeed is provided.
-   * Call this method in your game loop for continuous rotation.
-   */
-  update() {
-    if (this.rotateSpeed !== 0) {
-      this.rotateAngle += this.rotateSpeed; // Increment the rotation angle
-      this.rotateBoundary(this.rotateSpeed); // Rotate based on speed
-    }
+    // Update current points
+    this.a.x = rotatedA.x;
+    this.a.y = rotatedA.y;
+    this.b.x = rotatedB.x;
+    this.b.y = rotatedB.y;
+
+    // Store the current rotation angle
+    this.angle = angle;
   }
 }
 

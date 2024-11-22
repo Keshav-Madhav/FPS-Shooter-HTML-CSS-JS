@@ -18,12 +18,6 @@ function createTestMap(textures, name) {
   const mapWidth = 1900;
   const mapHeight = 1080;
 
-  // // // Add canvas boundaries
-  // boundaries.push(new Boundaries(0, 0, mapWidth, 0, edgeTexture));
-  // boundaries.push(new Boundaries(0, 0, 0, mapHeight, edgeTexture));
-  // boundaries.push(new Boundaries(0, mapHeight, mapWidth, mapHeight, edgeTexture));
-  // boundaries.push(new Boundaries(mapWidth, 0, mapWidth, mapHeight, edgeTexture));
-
   const circularChamberValues = {
     centerX: mapWidth / 2.5,
     centerY: mapHeight / 2,
@@ -33,13 +27,13 @@ function createTestMap(textures, name) {
     arcAngle: Math.PI / 3.18,
   }
 
-  const centerBoundary = new Boundaries(
-    circularChamberValues.centerX - circularChamberValues.radius,
-    circularChamberValues.centerY,
-    circularChamberValues.centerX + circularChamberValues.radius,
-    circularChamberValues.centerY,
-    wallTexture
-  );
+  const centerBoundary = new Boundaries({
+    x1: circularChamberValues.centerX - circularChamberValues.radius,
+    y1: circularChamberValues.centerY,
+    x2: circularChamberValues.centerX + circularChamberValues.radius,
+    y2: circularChamberValues.centerY,
+    texture: wallTexture
+  });
   boundaries.push(centerBoundary);
 
   for(let i = 1; i < 5; i++){
@@ -81,12 +75,42 @@ function createTestMap(textures, name) {
   ];
   corridors.forEach(corridor => boundaries.push(...corridor));
 
-  //Create west corridor
-  boundaries.push(new Boundaries(mapWidth / 2.5 - 100, mapHeight / 2 + 30, mapWidth / 6 - 60, mapHeight / 2 + 30, wallTexture));
-  boundaries.push(new Boundaries(mapWidth / 2.5 - 100, mapHeight / 2 - 30, mapWidth / 6, mapHeight / 2 - 30, wallTexture));
-  boundaries.push(new Boundaries(mapWidth / 6 - 60, mapHeight / 2 + 30, mapWidth / 6 - 60, mapHeight / 4, wallTexture));
-  boundaries.push(new Boundaries(mapWidth / 6, mapHeight / 2 - 30, mapWidth / 6, mapHeight / 4, wallTexture));
-  boundaries.push(new Boundaries(mapWidth / 6 - 60, mapHeight / 4, mapWidth / 6, mapHeight / 4, wallTexture));
+  // Create west corridor
+  boundaries.push(new Boundaries({
+    x1: mapWidth / 2.5 - 100,
+    y1: mapHeight / 2 + 30,
+    x2: mapWidth / 6 - 60,
+    y2: mapHeight / 2 + 30,
+    texture: wallTexture
+  }));
+  boundaries.push(new Boundaries({
+    x1: mapWidth / 2.5 - 100,
+    y1: mapHeight / 2 - 30,
+    x2: mapWidth / 6,
+    y2: mapHeight / 2 - 30,
+    texture: wallTexture
+  }));
+  boundaries.push(new Boundaries({
+    x1: mapWidth / 6 - 60,
+    y1: mapHeight / 2 + 30,
+    x2: mapWidth / 6 - 60,
+    y2: mapHeight / 4,
+    texture: wallTexture
+  }));
+  boundaries.push(new Boundaries({
+    x1: mapWidth / 6,
+    y1: mapHeight / 2 - 30,
+    x2: mapWidth / 6,
+    y2: mapHeight / 4,
+    texture: wallTexture
+  }));
+  boundaries.push(new Boundaries({
+    x1: mapWidth / 6 - 60,
+    y1: mapHeight / 4,
+    x2: mapWidth / 6,
+    y2: mapHeight / 4,
+    texture: wallTexture
+  }));
 
   const rooms = [
     // North room

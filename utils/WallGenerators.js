@@ -54,7 +54,7 @@ function createCircle({
     const x2 = centerX + radius * Math.cos(angle2);
     const y2 = centerY + radius * Math.sin(angle2);
     
-    boundaries.push(new Boundaries(x1, y1, x2, y2, texture));
+    boundaries.push(new Boundaries({x1, y1, x2, y2, texture}));
   }
   
   return boundaries;
@@ -93,8 +93,8 @@ function createCorridor({ startX, startY, endX, endY, width, texture }) {
   const y4 = endY + perpY * width/2;
   
   return [
-    new Boundaries(x1, y1, x4, y4, texture), // Right wall
-    new Boundaries(x2, y2, x3, y3, texture)  // Left wall
+    new Boundaries({x1, y1, x2:x4, y2:y4, texture}), // Right wall
+    new Boundaries({x1:x2, y1:y2, x2, y2, texture})  // Left wall
   ];
 }
 
@@ -144,13 +144,13 @@ function createBoundaryPath({ vertices, texture, connectEnds = false }) {
     const nextVertex = vertices[(i + 1) % vertices.length]; // Wrap around to first vertex when needed
     
     boundaries.push(
-      new Boundaries(
-        currentVertex.x,
-        currentVertex.y,
-        nextVertex.x,
-        nextVertex.y,
+      new Boundaries({
+        x1: currentVertex.x,
+        y1: currentVertex.y,
+        x2: nextVertex.x,
+        y2: nextVertex.y,
         texture
-      )
+      })
     );
   }
   
