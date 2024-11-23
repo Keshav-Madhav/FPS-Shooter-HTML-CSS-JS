@@ -94,7 +94,7 @@ function createCorridor({ startX, startY, endX, endY, width, texture }) {
   
   return [
     new Boundaries({x1, y1, x2:x4, y2:y4, texture}), // Right wall
-    new Boundaries({x1:x2, y1:y2, x2, y2, texture})  // Left wall
+    new Boundaries({x1: x2, y1: y2, x2: x3, y2: y3, texture}), // Floor
   ];
 }
 

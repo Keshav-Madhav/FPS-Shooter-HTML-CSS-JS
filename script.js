@@ -92,7 +92,10 @@ function updatePosition(e) {
 function setActiveMap(gameMaps, mapName) {
   ActiveMap = gameMaps.find(map => map.name === mapName);
   boundaries = ActiveMap.getBoundaries();
+
   enemies = ActiveMap.getEnemies();
+  enemies.forEach(enemy => boundaries.push(enemy.skin));
+
   player.pos = {x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y};
   player.updateViewDirection(ActiveMap.userViewDirection);
 }
@@ -104,6 +107,7 @@ function setUpGame() {
   // Add textures
   textures.addTexture("wall", './images/wall_texture_1.jpg');
   textures.addTexture("edge", './images/wall_texture_2.png');
+  textures.addTexture("cacoDemon", './images/caco-demon.png');
 
   // Add maps
   gameMaps.push(createTestMap(textures, 'Test Map'));
@@ -129,15 +133,18 @@ function draw() {
     const detected = enemy.detectPlayer(player, boundaries);
     if (detected.isDetected) {
       enemy.viewDirection = Math.atan2(detected.userPosition.y - enemy.pos.y, detected.userPosition.x - enemy.pos.x) * 180 / Math.PI;
-      console.log(detected);
+    }
+
+    const enemyBoundary = boundaries.find(b => b.uniqueID === enemy.id);
+    if (enemyBoundary) {
+      enemyBoundary.updatePosition(enemy.pos.x, enemy.pos.y);
+      enemyBoundary.rotateBoundary(enemy.viewDirection);
     }
   });
 
   drawMinimap(main_ctx, boundaries, player, enemies);
 
   drawFPS(main_canvas.width, main_canvas.height, main_ctx);
-
-  boundaries[0].rotateBoundary(0.03);
 
   requestAnimationFrame(draw);
 }

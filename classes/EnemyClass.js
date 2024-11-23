@@ -1,3 +1,4 @@
+import Boundaries from './BoundariesClass.js';
 import CameraClass from './CameraClass.js';
 import RayClass from './RayClass.js';
 
@@ -17,6 +18,8 @@ class EnemyClass {
    * @param {Array<{x: number, y: number}>} [options.moveStops] - Array of relative movement vectors
    * @param {number} [options.moveTime=1] - Duration in seconds for each movement step
    * @param {boolean} [options.repeatMovement=false] - Whether to repeat the movement pattern
+   * @param {HTMLImageElement} [options.texture=null] - The texture image for the enemy
+   * @param {number} [options.id] - The unique identifier for the enemy
    */
   constructor({
     x,
@@ -30,7 +33,9 @@ class EnemyClass {
     repeatRotation = false,
     moveStops = [],
     moveTime = 1,
-    repeatMovement = false
+    repeatMovement = false,
+    texture = null,
+    id
   }) {
     this.pos = { x, y };
     this.initialPos = { x, y };
@@ -71,6 +76,16 @@ class EnemyClass {
       rayCount,
       viewDirection
     });
+
+    this.skin = new Boundaries({
+      x1: x, 
+      y1: y - 10,
+      x2: x,
+      y2: y + 10,
+      texture,
+      options: { uniqueID: id }
+    });
+    this.id = id;
   }
 
   /**

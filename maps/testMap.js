@@ -15,6 +15,7 @@ function createTestMap(textures, name) {
   const enemies = [];
   const wallTexture = textures.getTexture("wall");
   const edgeTexture = textures.getTexture("edge");
+  const cacoDemon = textures.getTexture("cacoDemon");
   const mapWidth = 1900;
   const mapHeight = 1080;
 
@@ -160,6 +161,8 @@ function createTestMap(textures, name) {
     viewDirection: Math.PI, // Facing left
     fov: 60,
     rayCount: 3,
+    texture: edgeTexture,
+    id: 1
   }));
 
   // Enemy in the north room
@@ -169,6 +172,8 @@ function createTestMap(textures, name) {
     viewDirection: Math.PI / 2, // Facing down
     fov: 45,
     rayCount: 2,
+    texture: edgeTexture,
+    id: 2
   }));
 
   // Enemy in the south room
@@ -178,6 +183,8 @@ function createTestMap(textures, name) {
     viewDirection: -Math.PI / 2, // Facing up
     fov: 45,
     rayCount: 2,
+    texture: edgeTexture,
+    id: 3
   }));
 
   // Enemy in the east circular room
@@ -187,6 +194,8 @@ function createTestMap(textures, name) {
     viewDirection: Math.PI, // Facing left
     fov: 90,
     rayCount: 4,
+    texture: edgeTexture,
+    id: 4
   }));
 
   // Enemy in the west corridor
@@ -212,6 +221,8 @@ function createTestMap(textures, name) {
     ],
     moveTime: 2,
     repeatMovement: true,
+    texture: cacoDemon,
+    id: 5
   }));
 
   // Patrolling enemy in the east corridor
@@ -220,7 +231,9 @@ function createTestMap(textures, name) {
     y: mapHeight / 2,
     viewDirection: 0, // Facing right
     fov: 70,
-    rayCount: 3
+    rayCount: 3,
+    texture: edgeTexture,
+    id: 6
   }));
 
   const testMap = new GameMap(name, mapWidth, mapHeight, { x: mapWidth / 6 - 30, y: mapHeight / 4 + 20 });
