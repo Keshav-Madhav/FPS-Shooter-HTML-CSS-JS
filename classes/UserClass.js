@@ -9,6 +9,10 @@ import Boundaries from './BoundariesClass.js';
  * @property {Boundaries|null} boundary - The intersected boundary object, or `null` if no intersection occurs.
  */
 
+// Pre-calculated constants
+const DEG_TO_RAD = Math.PI / 180;
+const HALF_PI = Math.PI / 2;
+
 class Player {
   /**
    * Creates a player instance with an attached camera
@@ -38,6 +42,13 @@ class Player {
     this.moveRight = false;
     this.moveLeft = false;
 
+    // Cached direction values
+    this._cachedViewDirRad = viewDirection * DEG_TO_RAD;
+    this._cachedCosView = Math.cos(this._cachedViewDirRad);
+    this._cachedSinView = Math.sin(this._cachedViewDirRad);
+    this._cachedCosStrafe = Math.cos(this._cachedViewDirRad + HALF_PI);
+    this._cachedSinStrafe = Math.sin(this._cachedViewDirRad + HALF_PI);
+
     // Player's camera
     this.camera = new CameraClass({
       x,
@@ -46,6 +57,18 @@ class Player {
       rayCount,
       viewDirection
     });
+  }
+
+  /**
+   * Updates cached direction values when view direction changes
+   * @private
+   */
+  _updateDirectionCache() {
+    this._cachedViewDirRad = this.viewDirection * DEG_TO_RAD;
+    this._cachedCosView = Math.cos(this._cachedViewDirRad);
+    this._cachedSinView = Math.sin(this._cachedViewDirRad);
+    this._cachedCosStrafe = Math.cos(this._cachedViewDirRad + HALF_PI);
+    this._cachedSinStrafe = Math.sin(this._cachedViewDirRad + HALF_PI);
   }
 
   /**
@@ -63,30 +86,32 @@ class Player {
    * @private
    */
   updatePosition(deltaTime) {
-    const moveDirection = Math.atan2(
-      Math.sin((this.viewDirection * Math.PI) / 180),
-      Math.cos((this.viewDirection * Math.PI) / 180)
-    );
-    const strafeDirection = moveDirection + Math.PI / 2;
-
     let dx = 0;
     let dy = 0;
 
+    // Use cached trig values for movement
     if (this.moveForwards) {
-      dx += this.moveSpeed * Math.cos(moveDirection);
-      dy += this.moveSpeed * Math.sin(moveDirection);
+      dx += this._cachedCosView;
+      dy += this._cachedSinView;
     }
     if (this.moveBackwards) {
-      dx -= this.moveSpeed * Math.cos(moveDirection);
-      dy -= this.moveSpeed * Math.sin(moveDirection);
+      dx -= this._cachedCosView;
+      dy -= this._cachedSinView;
     }
     if (this.moveRight) {
-      dx += this.moveSpeed * Math.cos(strafeDirection);
-      dy += this.moveSpeed * Math.sin(strafeDirection);
+      dx += this._cachedCosStrafe;
+      dy += this._cachedSinStrafe;
     }
     if (this.moveLeft) {
-      dx -= this.moveSpeed * Math.cos(strafeDirection);
-      dy -= this.moveSpeed * Math.sin(strafeDirection);
+      dx -= this._cachedCosStrafe;
+      dy -= this._cachedSinStrafe;
+    }
+
+    // Normalize diagonal movement
+    if (dx !== 0 || dy !== 0) {
+      const length = Math.sqrt(dx * dx + dy * dy);
+      dx = dx / length * this.moveSpeed;
+      dy = dy / length * this.moveSpeed;
     }
 
     this.pos.x += dx * deltaTime;
@@ -99,6 +124,7 @@ class Player {
    */
   updateViewDirection(newDirection) {
     this.viewDirection = ((newDirection % 360) + 360) % 360;
+    this._updateDirectionCache();
     this.camera.update(this.pos, this.viewDirection);
   }
 

@@ -2,20 +2,28 @@ import RayClass from "./RayClass.js";
 import Boundaries from "./BoundariesClass.js";
 
 /**
+ * @typedef {Object} RayHit
+ * @property {number} distance - The perpendicular distance from the camera to the boundary.
+ * @property {number} textureX - The normalized x-coordinate on the boundary's texture (0 to 1).
+ * @property {HTMLImageElement|null} texture - The texture image of the intersected boundary.
+ * @property {Boundaries|null} boundary - The intersected boundary object.
+ * @property {{x: number, y: number}} point - The intersection point.
+ */
+
+/**
  * @typedef {Object} RayIntersection
  * @property {number} distance - The perpendicular distance from the camera to the closest boundary.
  * @property {number} textureX - The normalized x-coordinate on the boundary's texture (0 to 1).
- * @property {HTMLImageElement|null} texture - The texture image of the intersected boundary, or `null` if no boundary is hit.
- * @property {Boundaries|null} boundary - The intersected boundary object, or `null` if no intersection occurs.
+ * @property {HTMLImageElement|null} texture - The texture image of the intersected boundary.
+ * @property {Boundaries|null} boundary - The intersected boundary object.
+ * @property {RayHit[]} [transparentHits] - Array of transparent boundary hits behind this one.
  */
 
 
 /**
- * Class to create a user-controllable camera/light source
- * that emits rays to simulate a field of view and detect intersections.
+ * Optimized camera class with ray reuse and depth buffer support for transparency.
  */
-
-class CameraClass{
+class CameraClass {
   /**
    * Creates a camera instance with ray casting capabilities
    * @param {Object} options - Camera configuration
@@ -30,25 +38,46 @@ class CameraClass{
     this.fov = fov;
     this.rayCount = rayCount;
     this.viewDirection = viewDirection;
-    this.rays = this.createRays();
+    
+    // Pre-allocate rays array - we'll reuse these instead of recreating
+    this.rays = new Array(rayCount);
+    for (let i = 0; i < rayCount; i++) {
+      this.rays[i] = new RayClass(x, y, 0);
+    }
+    
+    // Pre-calculate angle offsets (relative to view direction)
+    this.angleOffsets = new Float32Array(rayCount);
+    const angleStep = fov / rayCount;
+    const halfFov = fov / 2;
+    for (let i = 0; i < rayCount; i++) {
+      this.angleOffsets[i] = (-halfFov + i * angleStep) * Math.PI / 180;
+    }
+    
+    // Cache for cos values used in fisheye correction
+    this.cosCache = new Float32Array(rayCount);
+    for (let i = 0; i < rayCount; i++) {
+      this.cosCache[i] = Math.cos(this.angleOffsets[i]);
+    }
+    
+    this._updateRays();
   }
 
   /**
-   * Creates the initial array of rays based on FOV and ray count
+   * Updates ray positions and angles efficiently
    * @private
    */
-  createRays() {
-    const rays = [];
-    for (
-      let angle = this.viewDirection - this.fov / 2;
-      angle < this.viewDirection + this.fov / 2;
-      angle += this.fov / this.rayCount
-    ) {
-      rays.push(
-        new RayClass(this.pos.x, this.pos.y, (angle * Math.PI) / 180)
-      );
+  _updateRays() {
+    const viewDirRad = this.viewDirection * Math.PI / 180;
+    
+    for (let i = 0; i < this.rayCount; i++) {
+      const ray = this.rays[i];
+      const angle = viewDirRad + this.angleOffsets[i];
+      
+      ray.pos.x = this.pos.x;
+      ray.pos.y = this.pos.y;
+      ray.dir.x = Math.cos(angle);
+      ray.dir.y = Math.sin(angle);
     }
-    return rays;
   }
 
   /**
@@ -59,75 +88,148 @@ class CameraClass{
   update(pos, viewDirection) {
     this.pos = pos;
     this.viewDirection = viewDirection;
-    this.rays = [];
-    
-    for (
-      let angle = viewDirection - this.fov / 2;
-      angle < viewDirection + this.fov / 2;
-      angle += this.fov / this.rayCount
-    ) {
-      this.rays.push(
-        new RayClass(this.pos.x, this.pos.y, (angle * Math.PI) / 180)
-      );
-    }
+    this._updateRays();
   }
 
   /**
-   * Casts rays and detects intersections with boundaries
+   * Quick check if a boundary could possibly be visible
+   * @param {Boundaries} boundary - The boundary to check
+   * @returns {boolean} True if the boundary might be visible
+   * @private
+   */
+  _isInViewFrustum(boundary) {
+    const viewDirRad = this.viewDirection * Math.PI / 180;
+    const halfFovRad = (this.fov / 2 + 10) * Math.PI / 180; // Add some margin
+    
+    // Check both endpoints of the boundary
+    const checkPoint = (px, py) => {
+      const dx = px - this.pos.x;
+      const dy = py - this.pos.y;
+      const angle = Math.atan2(dy, dx);
+      let diff = angle - viewDirRad;
+      
+      // Normalize to -PI to PI
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      
+      return Math.abs(diff) < halfFovRad + Math.PI / 4; // Extra margin for wide walls
+    };
+    
+    return checkPoint(boundary.a.x, boundary.a.y) || checkPoint(boundary.b.x, boundary.b.y);
+  }
+
+  /**
+   * Casts rays and detects intersections with boundaries.
+   * Supports transparency by collecting multiple hits per ray.
    * @param {Array<Boundaries>} boundaries - Array of boundary objects
    * @returns {Array<RayIntersection>} Scene intersection data
    */
   spread(boundaries) {
-    const scene = [];
-    for (let i = 0; i < this.rays.length; i++) {
+    const scene = new Array(this.rayCount);
+    
+    // Pre-filter boundaries using frustum culling
+    const visibleBoundaries = [];
+    const transparentBoundaries = [];
+    
+    for (const boundary of boundaries) {
+      if (this._isInViewFrustum(boundary)) {
+        if (boundary.isTransparent) {
+          transparentBoundaries.push(boundary);
+        } else {
+          visibleBoundaries.push(boundary);
+        }
+      }
+    }
+    
+    // Process each ray
+    for (let i = 0; i < this.rayCount; i++) {
       const ray = this.rays[i];
-      let closest = null;
-      let record = Infinity;
+      let closestDist = Infinity;
+      let closestHit = null;
       let textureX = 0;
       let texture = null;
       let hitBoundary = null;
-
-      for (let boundary of boundaries) {
+      
+      // Check opaque boundaries first
+      for (const boundary of visibleBoundaries) {
         const result = ray.cast(boundary);
         if (result) {
           const { point, boundary: hitBound } = result;
-          let distance = Math.hypot(
-            this.pos.x - point.x,
-            this.pos.y - point.y
-          );
-          const angle = Math.atan2(ray.dir.y, ray.dir.x) - (this.viewDirection * Math.PI) / 180; 
-          distance *= Math.cos(angle); // Correct for fisheye distortion
+          let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
+          
+          // Apply fisheye correction using cached cos value
+          distance *= this.cosCache[i];
 
-          if (distance < record) {
-            record = distance;
-            closest = point;
+          if (distance < closestDist) {
+            closestDist = distance;
+            closestHit = point;
             texture = hitBound.texture;
             hitBoundary = hitBound;
 
-            // Calculate texture coordinate
-            if (
-              Math.abs(hitBound.b.x - hitBound.a.x) >
-              Math.abs(hitBound.b.y - hitBound.a.y)
-            ) {
-              textureX = (point.x - hitBound.a.x) / (hitBound.b.x - hitBound.a.x);
-            } else {
-              textureX = (point.y - hitBound.a.y) / (hitBound.b.y - hitBound.a.y);
-            }
-
-            textureX = textureX % 1;
-            if (textureX < 0) textureX += 1;
+            // Calculate texture coordinate using wall length
+            textureX = this._calculateTextureX(hitBound, point);
           }
         }
       }
+      
+      // Collect transparent hits that are closer than the closest opaque hit
+      const transparentHits = [];
+      for (const boundary of transparentBoundaries) {
+        const result = ray.cast(boundary);
+        if (result) {
+          const { point, boundary: hitBound } = result;
+          let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
+          distance *= this.cosCache[i];
+          
+          // Only include if closer than the closest opaque wall (or if no opaque wall)
+          if (distance < closestDist) {
+            transparentHits.push({
+              distance,
+              textureX: this._calculateTextureX(hitBound, point),
+              texture: hitBound.texture,
+              boundary: hitBound,
+              point
+            });
+          }
+        }
+      }
+      
+      // Sort transparent hits by distance (closest first)
+      transparentHits.sort((a, b) => a.distance - b.distance);
 
       scene[i] = {
-        distance: record,
+        distance: closestDist,
         textureX: textureX,
         texture: texture,
         boundary: hitBoundary,
+        transparentHits: transparentHits
       };
     }
+    
     return scene;
+  }
+  
+  /**
+   * Calculates the texture X coordinate for a hit point on a boundary
+   * @param {Boundaries} boundary - The hit boundary
+   * @param {{x: number, y: number}} point - The intersection point
+   * @returns {number} The texture X coordinate (0 to 1)
+   * @private
+   */
+  _calculateTextureX(boundary, point) {
+    // Calculate distance along the wall from point A
+    const dx = point.x - boundary.a.x;
+    const dy = point.y - boundary.a.y;
+    const distFromA = Math.sqrt(dx * dx + dy * dy);
+    
+    // Use the wall length to get proper texture mapping
+    let textureX = distFromA / boundary.length;
+    
+    // Clamp and wrap
+    textureX = textureX % 1;
+    if (textureX < 0) textureX += 1;
+    
+    return textureX;
   }
 }
 

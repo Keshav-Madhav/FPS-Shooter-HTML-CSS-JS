@@ -83,7 +83,11 @@ class EnemyClass {
       x2: x,
       y2: y + 10,
       texture,
-      options: { uniqueID: id }
+      options: { 
+        uniqueID: id,
+        isTransparent: true,  // Enemy sprites have transparency
+        isSprite: true        // Billboard sprite
+      }
     });
     this.id = id;
   }
@@ -140,23 +144,10 @@ class EnemyClass {
     this.camera.update(this.pos, this.viewDirection);
   }
 
-  calculateNextTargetAngle() {
-    if (!this.isRotating || this.rotationStops.length === 0) {
-      return this.viewDirection;
-    }
-
-    // Instead of accumulating angles, we'll keep track of absolute angles
-    let targetAngle = this.initialViewDirection;
-    const currentRotation = this.rotationStops[this.currentRotationIndex];
-    
-    // Calculate the absolute angle based on the rotation pattern
-    for (let i = 0; i <= this.currentRotationIndex; i++) {
-      targetAngle = (targetAngle + this.rotationStops[i]) % 360;
-    }
-
-    return targetAngle;
-  }
-
+  /**
+   * Updates the rotation animation using real time
+   * @private
+   */
   updateRotation() {
     if (!this.isRotating) return;
 

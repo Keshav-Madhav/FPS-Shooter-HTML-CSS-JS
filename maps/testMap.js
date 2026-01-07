@@ -161,7 +161,7 @@ function createTestMap(textures, name) {
     viewDirection: Math.PI, // Facing left
     fov: 60,
     rayCount: 3,
-    texture: edgeTexture,
+    texture: cacoDemon,
     id: 1
   }));
 
@@ -172,7 +172,7 @@ function createTestMap(textures, name) {
     viewDirection: Math.PI / 2, // Facing down
     fov: 45,
     rayCount: 2,
-    texture: edgeTexture,
+    texture: cacoDemon,
     id: 2
   }));
 
@@ -183,7 +183,7 @@ function createTestMap(textures, name) {
     viewDirection: -Math.PI / 2, // Facing up
     fov: 45,
     rayCount: 2,
-    texture: edgeTexture,
+    texture: cacoDemon,
     id: 3
   }));
 
@@ -194,7 +194,7 @@ function createTestMap(textures, name) {
     viewDirection: Math.PI, // Facing left
     fov: 90,
     rayCount: 4,
-    texture: edgeTexture,
+    texture: cacoDemon,
     id: 4
   }));
 
@@ -232,7 +232,7 @@ function createTestMap(textures, name) {
     viewDirection: 0, // Facing right
     fov: 70,
     rayCount: 3,
-    texture: edgeTexture,
+    texture: cacoDemon,
     id: 6
   }));
 

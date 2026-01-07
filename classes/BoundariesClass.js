@@ -13,6 +13,8 @@ class Boundaries {
    * @param {HTMLImageElement} setUp.texture - The texture image of the boundary.
    * @param {Object} [setUp.options] - Additional options.
    * @param {string} [setUp.options.uniqueID] - A unique identifier for the boundary.
+   * @param {boolean} [setUp.options.isTransparent] - Whether this boundary has transparent texture (sprites).
+   * @param {boolean} [setUp.options.isSprite] - Whether this boundary is a sprite (always faces player).
    */
   constructor({ x1, y1, x2, y2, texture , options = {} }) {
     this.a = { x: x1, y: y1 }; // Point A of the boundary
@@ -22,6 +24,21 @@ class Boundaries {
     this.angle = 0; // Rotation angle
     this.texture = texture; // Boundary texture
     this.uniqueID = options.uniqueID || null; // Unique identifier
+    this.isTransparent = options.isTransparent || false; // For sprites with transparency
+    this.isSprite = options.isSprite || false; // Billboard sprites
+    
+    // Cache the wall length for texture mapping
+    this._updateLength();
+  }
+  
+  /**
+   * Updates the cached length of the boundary
+   * @private
+   */
+  _updateLength() {
+    const dx = this.b.x - this.a.x;
+    const dy = this.b.y - this.a.y;
+    this.length = Math.sqrt(dx * dx + dy * dy);
   }
 
   /**
@@ -47,6 +64,8 @@ class Boundaries {
     this.originalA.y += dy;
     this.originalB.x += dx;
     this.originalB.y += dy;
+    
+    this._updateLength();
   }
 
   /**
@@ -85,6 +104,8 @@ class Boundaries {
 
     // Store the current rotation angle
     this.angle = angle;
+    
+    this._updateLength();
   }
 }
 

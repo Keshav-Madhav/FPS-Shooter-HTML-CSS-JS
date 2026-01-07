@@ -5,8 +5,8 @@ const brightnessScaleFactor = 100;
 const smoothingRadius = 3; // Number of slices to take on each side for averaging
 const darknessExponent = 2.0; // Increased for faster darkness falloff
 
-// Variables to store the previous mouse position
-let prevMouseX = 0;
+// Maximum render distance (for performance optimization)
+const maxRenderDistance = 2000;
 
 // Variables to store the minimap settings
 var miniMapSettings = {
