@@ -1,4 +1,5 @@
 import Boundaries from "../classes/BoundariesClass.js";
+import CurvedWall from "../classes/CurvedWallClass.js";
 
 /**
  * Creates a circular boundary using multiple straight line segments.
@@ -157,4 +158,40 @@ function createBoundaryPath({ vertices, texture, connectEnds = false }) {
   return boundaries;
 }
 
-export { createCircle, createCorridor, createBoundaryPath };
+/**
+ * Creates a single curved wall as an arc.
+ * Much more efficient than multiple segments for smooth curves.
+ * @param {Object} params - The parameters for creating the curved wall
+ * @param {number} params.centerX - The x-coordinate of the circle's center
+ * @param {number} params.centerY - The y-coordinate of the circle's center
+ * @param {number} params.radius - The radius of the arc
+ * @param {number} params.startAngle - The starting angle in radians
+ * @param {number} params.endAngle - The ending angle in radians
+ * @param {HTMLImageElement} params.texture - The texture to apply to the curved wall
+ * @param {Object} [params.options] - Additional options (uniqueID, isTransparent, etc.)
+ * @returns {CurvedWall} A single curved wall object
+ * 
+ * @example
+ * // Create a 90-degree arc
+ * const curvedWall = createCurvedWall({
+ *   centerX: 300,
+ *   centerY: 300,
+ *   radius: 100,
+ *   startAngle: 0,
+ *   endAngle: Math.PI / 2,
+ *   texture: wallTexture
+ * });
+ */
+function createCurvedWall({ centerX, centerY, radius, startAngle, endAngle, texture, options = {} }) {
+  return new CurvedWall({
+    centerX,
+    centerY,
+    radius,
+    startAngle,
+    endAngle,
+    texture,
+    options
+  });
+}
+
+export { createCircle, createCorridor, createBoundaryPath, createCurvedWall };

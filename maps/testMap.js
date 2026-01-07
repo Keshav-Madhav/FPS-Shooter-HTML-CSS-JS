@@ -2,7 +2,7 @@ import Boundaries from "../classes/BoundariesClass.js";
 import EnemyClass from "../classes/EnemyClass.js";
 import GameMap from "../classes/GameMapClass.js";
 import Textures from "../classes/TexturesClass.js";
-import { createCircle, createCorridor, createBoundaryPath } from "../utils/WallGenerators.js";
+import { createCircle, createCorridor, createBoundaryPath, createCurvedWall } from "../utils/WallGenerators.js";
 
 /**
  * Creates a test map with various rooms and corridors for testing purposes.
@@ -23,9 +23,7 @@ function createTestMap(textures, name) {
     centerX: mapWidth / 2.5,
     centerY: mapHeight / 2,
     radius: 105,
-    segments: 4,
     texture: wallTexture,
-    arcAngle: Math.PI / 3.18,
   }
 
   const centerBoundary = new Boundaries({
@@ -37,9 +35,19 @@ function createTestMap(textures, name) {
   });
   boundaries.push(centerBoundary);
 
+  // Replace multiple segments with single curved walls for better performance
   for(let i = 1; i < 5; i++){
-    const startAngle = Math.PI * (1.093 + (i * 0.5))
-    boundaries.push(...createCircle({...circularChamberValues, startAngle}));
+    const startAngle = Math.PI * (1.093 + (i * 0.5));
+    const endAngle = startAngle + Math.PI / 3.18;
+    
+    boundaries.push(createCurvedWall({
+      centerX: circularChamberValues.centerX,
+      centerY: circularChamberValues.centerY,
+      radius: circularChamberValues.radius,
+      startAngle: startAngle,
+      endAngle: endAngle,
+      texture: wallTexture
+    }));
   }
 
   // Create four corridors extending from the central circle
@@ -139,19 +147,18 @@ function createTestMap(textures, name) {
       ],
       texture: wallTexture,
     }),
-
-    // East room (circular)
-    createCircle({
-      centerX: (mapWidth * 3) / 4.5 + 197,
-      centerY: mapHeight / 2,
-      radius: 200,
-      segments: 30,
-      texture: wallTexture,
-      startAngle: Math.PI * 1.048,
-      arcAngle: Math.PI * 1.904
-    }),
   ];
   rooms.forEach(room => boundaries.push(...room));
+
+  // East room (now using curved wall instead of multiple segments)
+  boundaries.push(createCurvedWall({
+    centerX: (mapWidth * 3) / 4.5 + 197,
+    centerY: mapHeight / 2,
+    radius: 200,
+    startAngle: Math.PI * 1.048,
+    endAngle: Math.PI * 1.048 + Math.PI * 1.904,
+    texture: wallTexture
+  }));
 
   // Add enemies
 

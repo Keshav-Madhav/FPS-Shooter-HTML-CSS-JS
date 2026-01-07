@@ -22,12 +22,26 @@ class RayClass {
 
   /**
    * Casts ray against a boundary and returns intersection info
-   * Uses optimized line-line intersection algorithm
-   * @param {Boundaries} bound - The boundary to test against
-   * @returns {{point: {x: number, y: number}, boundary: Boundaries}|undefined}
+   * Handles both straight walls and curved walls
+   * @param {Boundaries|CurvedWall} bound - The boundary to test against
+   * @returns {{point: {x: number, y: number}, boundary: Boundaries|CurvedWall, angle?: number}|undefined}
    */
   cast(bound) {
-    // Wall segment
+    // Handle curved walls
+    if (bound.isCurved) {
+      const intersection = bound.rayIntersection(this);
+      if (intersection) {
+        return {
+          point: intersection.point,
+          boundary: bound,
+          angle: intersection.angle,
+          distance: intersection.distance
+        };
+      }
+      return undefined;
+    }
+    
+    // Original straight wall logic
     const x1 = bound.a.x;
     const y1 = bound.a.y;
     const x2 = bound.b.x;

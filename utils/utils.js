@@ -99,10 +99,34 @@ function drawMinimap(ctx, boundaries, user, enemies) {
   ctx.strokeStyle = 'white';
   ctx.lineWidth = 1 / miniMapSettings.scale;
   for (let boundary of boundaries) {
-    ctx.beginPath();
-    ctx.moveTo(boundary.a.x + offsetX, boundary.a.y + offsetY);
-    ctx.lineTo(boundary.b.x + offsetX, boundary.b.y + offsetY);
-    ctx.stroke();
+    // Handle curved walls
+    if (boundary.isCurved) {
+      ctx.beginPath();
+      let firstPoint = true;
+      // Use more segments for smoother curves on minimap
+      const segments = Math.max(32, Math.ceil(Math.abs(boundary.endAngle - boundary.startAngle) * 16));
+      const angleDiff = boundary.endAngle - boundary.startAngle;
+      
+      for (let i = 0; i <= segments; i++) {
+        const angle = boundary.startAngle + (i / segments) * angleDiff;
+        const x = boundary.centerX + boundary.radius * Math.cos(angle) + offsetX;
+        const y = boundary.centerY + boundary.radius * Math.sin(angle) + offsetY;
+        
+        if (firstPoint) {
+          ctx.moveTo(x, y);
+          firstPoint = false;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+      ctx.stroke();
+    } else {
+      // Handle straight walls
+      ctx.beginPath();
+      ctx.moveTo(boundary.a.x + offsetX, boundary.a.y + offsetY);
+      ctx.lineTo(boundary.b.x + offsetX, boundary.b.y + offsetY);
+      ctx.stroke();
+    }
   }
 
   // Draw user position (fixed at center)

@@ -101,7 +101,7 @@ class CameraClass {
     const viewDirRad = this.viewDirection * Math.PI / 180;
     const halfFovRad = (this.fov / 2 + 10) * Math.PI / 180; // Add some margin
     
-    // Check both endpoints of the boundary
+    // Check both endpoints of the boundary for straight walls
     const checkPoint = (px, py) => {
       const dx = px - this.pos.x;
       const dy = py - this.pos.y;
@@ -114,6 +114,19 @@ class CameraClass {
       
       return Math.abs(diff) < halfFovRad + Math.PI / 4; // Extra margin for wide walls
     };
+    
+    // For curved walls, check multiple points along the arc
+    if (boundary.isCurved) {
+      const samples = 6;
+      const angleDiff = boundary.endAngle - boundary.startAngle;
+      for (let i = 0; i <= samples; i++) {
+        const angle = boundary.startAngle + (i / samples) * angleDiff;
+        const px = boundary.centerX + boundary.radius * Math.cos(angle);
+        const py = boundary.centerY + boundary.radius * Math.sin(angle);
+        if (checkPoint(px, py)) return true;
+      }
+      return false;
+    }
     
     return checkPoint(boundary.a.x, boundary.a.y) || checkPoint(boundary.b.x, boundary.b.y);
   }
@@ -154,7 +167,7 @@ class CameraClass {
       for (const boundary of visibleBoundaries) {
         const result = ray.cast(boundary);
         if (result) {
-          const { point, boundary: hitBound } = result;
+          const { point, boundary: hitBound, angle } = result;
           let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
           
           // Apply fisheye correction using cached cos value
@@ -166,8 +179,8 @@ class CameraClass {
             texture = hitBound.texture;
             hitBoundary = hitBound;
 
-            // Calculate texture coordinate using wall length
-            textureX = this._calculateTextureX(hitBound, point);
+            // Calculate texture coordinate using wall length or curve angle
+            textureX = this._calculateTextureX(hitBound, point, angle);
           }
         }
       }
@@ -177,7 +190,7 @@ class CameraClass {
       for (const boundary of transparentBoundaries) {
         const result = ray.cast(boundary);
         if (result) {
-          const { point, boundary: hitBound } = result;
+          const { point, boundary: hitBound, angle } = result;
           let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
           distance *= this.cosCache[i];
           
@@ -185,7 +198,7 @@ class CameraClass {
           if (distance < closestDist) {
             transparentHits.push({
               distance,
-              textureX: this._calculateTextureX(hitBound, point),
+              textureX: this._calculateTextureX(hitBound, point, angle),
               texture: hitBound.texture,
               boundary: hitBound,
               point
@@ -211,21 +224,72 @@ class CameraClass {
   
   /**
    * Calculates the texture X coordinate for a hit point on a boundary
-   * @param {Boundaries} boundary - The hit boundary
+   * Handles both straight walls and curved walls with automatic tiling based on texture size
+   * Sprites/transparent textures stretch without tiling
+   * @param {Boundaries|CurvedWall} boundary - The hit boundary
    * @param {{x: number, y: number}} point - The intersection point
+   * @param {number} [angle] - For curved walls, the angle at intersection
    * @returns {number} The texture X coordinate (0 to 1)
    * @private
    */
-  _calculateTextureX(boundary, point) {
-    // Calculate distance along the wall from point A
+  _calculateTextureX(boundary, point, angle) {
+    // Sprites/transparent textures always stretch (no tiling)
+    if (boundary.isSprite || boundary.isTransparent) {
+      // For sprites, just return normalized position (0 to 1)
+      if (boundary.isCurved) {
+        return boundary.getTextureX(angle);
+      }
+      
+      const dx = point.x - boundary.a.x;
+      const dy = point.y - boundary.a.y;
+      const distFromA = Math.sqrt(dx * dx + dy * dy);
+      
+      let textureX = distFromA / boundary.length;
+      textureX = textureX % 1;
+      if (textureX < 0) textureX += 1;
+      
+      return textureX;
+    }
+    
+    // Regular walls use tiling based on texture size
+    const pixelsPerWorldUnit = 4; // Conversion factor for texture scale
+    
+    // Get texture dimensions
+    if (!boundary.texture || !boundary.texture.complete) {
+      return 0;
+    }
+    
+    const textureWidth = boundary.texture.width;
+    const textureWorldWidth = textureWidth / pixelsPerWorldUnit; // How many world units one texture represents
+    
+    // Handle curved walls
+    if (boundary.isCurved) {
+      // Calculate position along arc from start to end
+      let normalizedPos = boundary.getTextureX(angle);
+      
+      // Calculate how many times the texture repeats across the arc
+      const repeatCount = boundary.arcLength / textureWorldWidth;
+      
+      // Apply tiling based on texture size
+      let tiledX = normalizedPos * repeatCount;
+      tiledX = tiledX % 1; // Wrap to 0-1
+      if (tiledX < 0) tiledX += 1;
+      
+      return tiledX;
+    }
+    
+    // Handle straight walls
     const dx = point.x - boundary.a.x;
     const dy = point.y - boundary.a.y;
     const distFromA = Math.sqrt(dx * dx + dy * dy);
     
-    // Use the wall length to get proper texture mapping
-    let textureX = distFromA / boundary.length;
+    // Calculate how many times the texture repeats across the wall
+    const repeatCount = boundary.length / textureWorldWidth;
     
-    // Clamp and wrap
+    // Calculate position along wall and apply tiling
+    let textureX = (distFromA / boundary.length) * repeatCount;
+    
+    // Wrap to 0-1 for repeating texture
     textureX = textureX % 1;
     if (textureX < 0) textureX += 1;
     
