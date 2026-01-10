@@ -117,10 +117,10 @@ class Player {
       } else {
         dx *= this.moveSpeed;
         dy *= this.moveSpeed;
-      }
-      
-      this.pos.x += dx * deltaTime;
-      this.pos.y += dy * deltaTime;
+    }
+
+    this.pos.x += dx * deltaTime;
+    this.pos.y += dy * deltaTime;
     }
   }
 

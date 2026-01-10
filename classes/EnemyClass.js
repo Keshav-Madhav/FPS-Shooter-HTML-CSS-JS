@@ -241,14 +241,14 @@ class EnemyClass {
   detectPlayer(player, boundaries) {
     const dx = player.pos.x - this.pos.x;
     const dy = player.pos.y - this.pos.y;
-    
+
     // Quick squared distance check (avoids sqrt)
     const distSq = dx * dx + dy * dy;
     if (distSq > this._visibilityDistanceSq) {
       this.wasDetected = false;
       return { isDetected: false, distance: null, userPosition: null, relativeAngle: null };
     }
-    
+
     const distance = Math.sqrt(distSq);
 
     // Calculate angle to player
@@ -285,13 +285,13 @@ class EnemyClass {
       }
 
       // No obstruction - player is visible
-      this.wasDetected = true;
-      return {
-        isDetected: true,
-        distance,
-        userPosition: player.pos,
-        relativeAngle
-      };
+        this.wasDetected = true;
+        return {
+          isDetected: true,
+          distance,
+          userPosition: player.pos,
+          relativeAngle
+        };
     }
 
     this.wasDetected = false;

@@ -148,19 +148,33 @@ function renderWallSlice(ctx, x, y, width, height, texture, color, textureX, bri
 }
 
 /**
- * Renders a transparent sprite slice
- * Does not apply darkness overlay for sprites
+ * Renders a transparent/translucent slice (sprites or colored walls)
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {number} x - X position on screen
  * @param {number} y - Y position on screen
  * @param {number} width - Slice width
  * @param {number} height - Wall height
- * @param {HTMLImageElement} texture - Texture image
+ * @param {HTMLImageElement|null} texture - Texture image
+ * @param {string|null} color - Solid color with alpha
  * @param {number} textureX - Texture X coordinate (0-1)
+ * @param {number} brightness - Brightness value (0-1)
  */
-function renderSpriteSlice(ctx, x, y, width, height, texture, textureX) {
-  if (!texture || !texture.complete) return;
+function renderTranslucentSlice(ctx, x, y, width, height, texture, color, textureX, brightness) {
+  // Handle colored translucent walls
+  if (!texture || !texture.complete) {
+    if (color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, width + 0.5, height);
+      // Apply subtle brightness for depth
+      if (brightness < 0.95) {
+        ctx.fillStyle = `rgba(0,0,0,${(1 - brightness) * 0.3})`;
+        ctx.fillRect(x, y, width + 0.5, height);
+      }
+    }
+    return;
+  }
   
+  // Handle textured sprites
   const texWidth = texture.width;
   const texHeight = texture.height;
   const srcX = ((textureX * texWidth) | 0) % texWidth;
@@ -246,7 +260,7 @@ function render3D(scene) {
     );
   }
   
-  // Third pass: Collect and render transparent sprites
+  // Third pass: Collect and render transparent/translucent walls
   // Sort by distance (furthest first for correct alpha blending)
   const transparentSlices = [];
   
@@ -262,7 +276,9 @@ function render3D(scene) {
             rayIndex: i,
             distance: hit.distance,
             textureX: hit.textureX,
-            texture: hit.texture
+            texture: hit.texture,
+            color: hit.color,
+            boundary: hit.boundary
           });
         }
       }
@@ -274,16 +290,19 @@ function render3D(scene) {
     transparentSlices.sort((a, b) => b.distance - a.distance);
   }
   
-  // Render transparent slices
+  // Render transparent/translucent slices
   for (let i = 0; i < transparentSlices.length; i++) {
     const slice = transparentSlices[i];
-    const { rayIndex, distance, textureX, texture } = slice;
+    const { rayIndex, distance, textureX, texture, color } = slice;
     
     const wallHeight = (cachedHeight * HEIGHT_SCALE_FACTOR) / distance;
     const y = cachedHalfHeight - wallHeight * 0.5;
     const x = rayIndex * sliceWidth;
     
-    renderSpriteSlice(main_ctx, x, y, sliceWidth, wallHeight, texture, textureX);
+    // Calculate brightness for this distance
+    const brightness = calculateBrightness(distance);
+    
+    renderTranslucentSlice(main_ctx, x, y, sliceWidth, wallHeight, texture, color, textureX, brightness);
   }
 }
 

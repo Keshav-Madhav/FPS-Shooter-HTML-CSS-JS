@@ -309,11 +309,61 @@ function draw() {
   
   // Draw map selector overlay
   drawMapSelector();
-
-  requestAnimationFrame(draw);
 }
+
+// ============ GAME LOOP OPTIONS ============
+// Set to true for uncapped FPS, false for vsync-locked 60fps
+const UNCAPPED_FPS = false;
+
+let isRunning = false;
+
+function startGameLoop() {
+  if (isRunning) return;
+  isRunning = true;
+  
+  if (UNCAPPED_FPS) {
+    // Uncapped: Use while loop with periodic yields for smooth performance
+    runUncappedLoop();
+  } else {
+    // VSync locked: Use requestAnimationFrame
+    runVsyncLoop();
+  }
+}
+
+// Uncapped FPS loop - runs as fast as possible
+function runUncappedLoop() {
+  const channel = new MessageChannel();
+  
+  channel.port1.onmessage = () => {
+    if (!isRunning) return;
+    draw();
+    channel.port2.postMessage(null);
+  };
+  
+  // Start the loop
+  channel.port2.postMessage(null);
+}
+
+// VSync-locked loop using requestAnimationFrame
+function runVsyncLoop() {
+  function loop() {
+    if (!isRunning) return;
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+// Stop the game loop (useful for debugging)
+function stopGameLoop() {
+  isRunning = false;
+}
+
+// Expose for console debugging
+window.stopGameLoop = stopGameLoop;
+window.startGameLoop = startGameLoop;
 
 setUpGame();
 textures.setOnAllLoaded(() => {
-  draw();
+  startGameLoop();
 });

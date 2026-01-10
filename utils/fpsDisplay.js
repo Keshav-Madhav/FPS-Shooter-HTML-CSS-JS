@@ -1,75 +1,73 @@
-let fps = 60;
-let lastFrameTime = Date.now();
+let lastFrameTime = performance.now();
 let frameTimes = [];
 let currentFps = 0;
 let avgFps = 0;
 let onePercentLowFps = 0;
 
+// How long to keep frame times (in ms)
+const SAMPLE_WINDOW_MS = 1000;
+
 /**
  * @typedef {Object} FPSMetrics
- * @property {number} currentFps - The current FPS calculated from the time difference between the current and previous frame.
- * @property {number} avgFps - The average FPS over the last second, calculated from the frame times stored for the last second.
- * @property {number} onePercentLowFps - The 1% low FPS, representing the average FPS of the slowest 1% of frames over the last second.
+ * @property {number} currentFps - The real-time instant FPS.
+ * @property {number} avgFps - The average FPS over the last second.
+ * @property {number} onePercentLowFps - The 1% low FPS.
  */
 
 /**
  * Calculates and draws the current FPS, average FPS, and 1% low FPS on a canvas.
- * The FPS metrics are calculated over the last second of frames.
+ * Uses high-precision timing for accurate readings.
  * 
- * @param {number} width - The width of the canvas element. Used to determine the position of the FPS display.
- * @param {number} height - The height of the canvas element. Used to determine the position of the FPS display.
- * @param {CanvasRenderingContext2D} context - The 2D rendering context of the canvas where the FPS metrics will be drawn.
+ * @param {number} width - The width of the canvas element.
+ * @param {number} height - The height of the canvas element.
+ * @param {CanvasRenderingContext2D} context - The 2D rendering context.
  * 
- * @returns {FPSMetrics} An object containing the current FPS, average FPS, and 1% low FPS.
- *  - currentFps: The current FPS calculated from the time difference between the current and previous frame.
- *  - avgFps: The average FPS over the last second, calculated from the frame times stored for the last second.
- *  - onePercentLowFps: The 1% low FPS, representing the average FPS of the slowest 1% of frames over the last second.
- * 
- * @example
- * // Example usage:
- * const canvas = document.createElement('canvas');
- * document.body.appendChild(canvas);
- * const context = canvas.getContext('2d');
- * 
- * function gameLoop() {
- *   const { currentFps, avgFps, onePercentLowFps } = drawFPS(canvas.width, canvas.height, context);
- *
- *   requestAnimationFrame(gameLoop);
- * }
- * gameLoop();
+ * @returns {FPSMetrics} An object containing FPS metrics.
  */
 const drawFPS = (width, height, context) => {
-  let now = Date.now();
-  let frameTime = now - lastFrameTime;
+  const now = performance.now();
+  const frameTime = now - lastFrameTime;
   lastFrameTime = now;
 
-  // Update current FPS
+  // Avoid division by zero on first frame
+  if (frameTime <= 0) return { currentFps, avgFps, onePercentLowFps };
+
+  // Calculate real-time instant FPS (no smoothing)
   currentFps = Math.round(1000 / frameTime);
 
-  // Store frame time for average and 1% low calculations
-  frameTimes.push(frameTime);
-  if (frameTimes.length > fps) {
-    frameTimes.shift(); // Keep only the last second's worth of frames
+  // Store frame time with timestamp for time-based window
+  frameTimes.push({ time: now, frameTime });
+
+  // Remove frames older than SAMPLE_WINDOW_MS
+  const cutoff = now - SAMPLE_WINDOW_MS;
+  while (frameTimes.length > 0 && frameTimes[0].time < cutoff) {
+    frameTimes.shift();
   }
 
-  // Calculate average FPS over the last second
-  const totalFrameTime = frameTimes.reduce((a, b) => a + b, 0);
-  avgFps = Math.round(1000 / (totalFrameTime / frameTimes.length));
+  // Calculate average FPS over the sample window
+  if (frameTimes.length > 0) {
+    const totalFrameTime = frameTimes.reduce((sum, f) => sum + f.frameTime, 0);
+    avgFps = Math.round(1000 / (totalFrameTime / frameTimes.length));
 
-  // Calculate 1% low FPS
-  const sortedFrameTimes = [...frameTimes].sort((a, b) => b - a);
-  const onePercentLowIndex = Math.ceil(sortedFrameTimes.length * 0.01);
-  const onePercentLowTime = sortedFrameTimes.slice(0, onePercentLowIndex).reduce((a, b) => a + b, 0) / onePercentLowIndex;
-  onePercentLowFps = Math.round(1000 / onePercentLowTime);
+    // Calculate 1% low FPS (slowest 1% of frames)
+    if (frameTimes.length >= 10) {
+      const sortedTimes = frameTimes.map(f => f.frameTime).sort((a, b) => b - a);
+      const onePercentCount = Math.max(1, Math.ceil(sortedTimes.length * 0.01));
+      const slowestSum = sortedTimes.slice(0, onePercentCount).reduce((a, b) => a + b, 0);
+      onePercentLowFps = Math.round(1000 / (slowestSum / onePercentCount));
+    }
+  }
 
-  // Draw FPS metrics on canvasr
-  context.fillStyle = 'rgba(255, 255, 255, 0.5)';
-  context.fillRect(width - 80, 10, 80, 40);
-  context.fillStyle = 'black';
-  context.font = '11px sans-serif';
-  context.fillText(`FPS: ${currentFps}`, width - 75, 22);
-  context.fillText(`Avg FPS: ${avgFps}`, width - 75, 34);
-  context.fillText(`1% Low: ${onePercentLowFps}`, width - 75, 46);
+  // Draw FPS metrics on canvas
+  context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  context.fillRect(width - 90, 10, 85, 50);
+  context.fillStyle = '#00ff00';
+  context.font = 'bold 12px monospace';
+  context.fillText(`FPS: ${currentFps}`, width - 85, 25);
+  context.fillStyle = '#ffffff';
+  context.font = '11px monospace';
+  context.fillText(`Avg: ${avgFps}`, width - 85, 40);
+  context.fillText(`1%L: ${onePercentLowFps}`, width - 85, 53);
 
   return { currentFps, avgFps, onePercentLowFps };
 }

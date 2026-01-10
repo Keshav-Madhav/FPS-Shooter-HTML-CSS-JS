@@ -192,7 +192,7 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
   // Calculate offset to keep player centered
   const offsetX = centerX - user.pos.x;
   const offsetY = centerY - user.pos.y;
-  
+
   // Draw goal zone if provided (pulsing green circle)
   if (goalZone) {
     const goalX = goalZone.x + offsetX;
@@ -227,15 +227,26 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
     ctx.fill();
   }
 
-  // Draw boundaries
-  ctx.strokeStyle = 'white';
+  // Draw boundaries (opaque first, then translucent)
   ctx.lineWidth = invScale;
   
   for (let i = 0; i < boundaries.length; i++) {
     const boundary = boundaries[i];
     
-    // Skip transparent/sprite boundaries
-    if (boundary.isTransparent) continue;
+    // Skip sprite boundaries (enemies etc) but draw translucent walls
+    if (boundary.isSprite) continue;
+    
+    // Set color based on wall type
+    if (boundary.isTransparent && boundary.color) {
+      // Use the wall's actual color for translucent walls
+      ctx.strokeStyle = boundary.color;
+    } else if (boundary.color && !boundary.isTransparent) {
+      // Solid colored walls - show as slightly dimmer version
+      ctx.strokeStyle = boundary.color;
+    } else {
+      // Default white for textured/normal walls
+      ctx.strokeStyle = 'white';
+    }
     
     if (boundary.isCurved) {
       ctx.beginPath();
@@ -250,7 +261,7 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
         const angle = boundary.startAngle + (j / segments) * angleDiff;
         x = boundary.centerX + boundary.radius * fastCos(angle) + offsetX;
         y = boundary.centerY + boundary.radius * fastSin(angle) + offsetY;
-        ctx.lineTo(x, y);
+          ctx.lineTo(x, y);
       }
       ctx.stroke();
     } else {
@@ -270,24 +281,24 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
   const playerGradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, playerFovLength);
   playerGradient.addColorStop(0, 'rgba(255, 255, 0, 0.4)');
   playerGradient.addColorStop(1, 'rgba(255, 255, 0, 0)');
-  
+
   ctx.fillStyle = playerGradient;
   ctx.beginPath();
   ctx.moveTo(centerX, centerY);
   ctx.arc(centerX, centerY, playerFovLength, playerDirRad - playerFovHalfRad, playerDirRad + playerFovHalfRad);
   ctx.closePath();
   ctx.fill();
-  
+
   // Draw player position dot
   ctx.fillStyle = 'yellow';
-  ctx.beginPath();
+    ctx.beginPath();
   ctx.arc(centerX, centerY, 3 * invScale, 0, Math.PI * 2);
   ctx.fill();
 
   // Draw enemy FOV cones - only for enemies within minimap radius
   for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
-    
+
     // Distance from player (minimap center) to enemy
     const dx = enemy.pos.x - user.pos.x;
     const dy = enemy.pos.y - user.pos.y;
@@ -308,7 +319,7 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
     
     // Draw FOV cone
     drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries);
-    
+
     // Enemy position dot
     const enemyCenterX = enemy.pos.x + offsetX;
     const enemyCenterY = enemy.pos.y + offsetY;

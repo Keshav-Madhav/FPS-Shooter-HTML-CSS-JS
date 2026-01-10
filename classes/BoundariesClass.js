@@ -109,7 +109,7 @@ class Boundaries {
     
     return { x: accumulatedX, y: accumulatedY };
   }
-
+  
   /**
    * Updates the boundary's animation state (movement and rotation)
    * Call this every frame for animated walls
@@ -294,7 +294,7 @@ class Boundaries {
    * Updates the position of the boundary by putting center at (x, y).
    * @param {number} x - New center X position
    * @param {number} y - New center Y position
-   */ 
+  */ 
   updatePosition(x, y) {
     // Calculate the offset to move the center to (x, y)
     const dx = x - this.centerX;

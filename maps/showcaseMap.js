@@ -699,6 +699,90 @@ function createShowcaseMap(textures, name) {
   }));
   
   // ========================================
+  // AREA 14: TRANSLUCENT WALL TUNNEL (Far East)
+  // 10 translucent walls in a row to walk through
+  // Position: (2100, 800)
+  // ========================================
+  
+  const tunnelColors = [
+    'rgba(255, 0, 0, 0.3)',
+    'rgba(255, 127, 0, 0.3)',
+    'rgba(255, 255, 0, 0.3)',
+    'rgba(127, 255, 0, 0.3)',
+    'rgba(0, 255, 0, 0.3)',
+    'rgba(0, 255, 127, 0.3)',
+    'rgba(0, 255, 255, 0.3)',
+    'rgba(0, 127, 255, 0.3)',
+    'rgba(0, 0, 255, 0.3)',
+    'rgba(127, 0, 255, 0.3)'
+  ];
+  
+  for (let i = 0; i < 10; i++) {
+    boundaries.push(new Boundaries({
+      x1: 2100, y1: 600 + i * 50,
+      x2: 2300, y2: 600 + i * 50,
+      texture: null,
+      options: { 
+        color: tunnelColors[i], 
+        isTransparent: true 
+      }
+    }));
+  }
+  
+  // ========================================
+  // AREA 15: ANIMATED TRANSLUCENT WALLS (Northeast corner)
+  // Position: (2000, 300)
+  // ========================================
+  
+  // Moving translucent wall
+  boundaries.push(new Boundaries({
+    x1: 2000, y1: 250,
+    x2: 2150, y2: 250,
+    texture: null,
+    options: {
+      color: 'rgba(0, 200, 255, 0.4)',
+      isTransparent: true,
+      moveStops: [
+        { x: 0, y: 100 },
+        { x: 0, y: -100 }
+      ],
+      moveTime: 2,
+      repeatMovement: true
+    }
+  }));
+  
+  // Rotating translucent wall
+  boundaries.push(new Boundaries({
+    x1: 2100, y1: 400,
+    x2: 2200, y2: 400,
+    texture: null,
+    options: {
+      color: 'rgba(255, 100, 200, 0.4)',
+      isTransparent: true,
+      rotationStops: [90, 90, 90, 90],
+      rotationTime: 1.5,
+      repeatRotation: true
+    }
+  }));
+  
+  // Diagonal moving translucent wall
+  boundaries.push(new Boundaries({
+    x1: 2200, y1: 200,
+    x2: 2200, y2: 350,
+    texture: null,
+    options: {
+      color: 'rgba(150, 255, 100, 0.35)',
+      isTransparent: true,
+      moveStops: [
+        { x: 80, y: 80 },
+        { x: -80, y: -80 }
+      ],
+      moveTime: 2.5,
+      repeatMovement: true
+    }
+  }));
+  
+  // ========================================
   // CREATE MAP
   // ========================================
   
