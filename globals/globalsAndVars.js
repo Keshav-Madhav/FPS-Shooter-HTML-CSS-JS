@@ -1,21 +1,26 @@
+/**
+ * Global configuration variables for the raycaster engine
+ */
 
-// Define scaling factors to adjust wall heights and brightness separately
+// Rendering scale factors
 const heightScaleFactor = 100;
 const brightnessScaleFactor = 100;
-const smoothingRadius = 3; // Number of slices to take on each side for averaging
-const darknessExponent = 2.0; // Increased for faster darkness falloff
+const smoothingRadius = 3;
+const darknessExponent = 2.0;
 
-// Maximum render distance (for performance optimization)
+// Maximum render distance (walls beyond this are culled)
 const maxRenderDistance = 2000;
 
-// Variables to store the minimap settings
+// Minimap configuration
 var miniMapSettings = {
   x: 110,
   y: 110,
   scale: 0.25,
   radius: 350
-}
+};
 
-// Sensitivity factor for rotation speed
+// Mouse sensitivity for rotation
 const sensitivity = 0.2;
-let prevTime = performance.now(); // Track the previous time
+
+// Frame timing
+let prevTime = performance.now();

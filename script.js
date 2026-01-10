@@ -124,6 +124,14 @@ function draw() {
 
   const deltaTime = getDeltaTime(120);
 
+  // Update animated boundaries
+  for (let i = 0; i < boundaries.length; i++) {
+    const boundary = boundaries[i];
+    if (boundary.isAnimated) {
+      boundary.update();
+    }
+  }
+
   const scene = player.getScene(boundaries);
   render3D(scene);
   player.update(deltaTime);

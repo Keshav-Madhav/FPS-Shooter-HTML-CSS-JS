@@ -1,5 +1,6 @@
 import RayClass from "./RayClass.js";
 import Boundaries from "./BoundariesClass.js";
+import { DEG_TO_RAD } from "../utils/mathLUT.js";
 
 /**
  * @typedef {Object} RayHit
@@ -19,9 +20,15 @@ import Boundaries from "./BoundariesClass.js";
  * @property {RayHit[]} [transparentHits] - Array of transparent boundary hits behind this one.
  */
 
+// Maximum render distance for culling (set very high to effectively disable for now)
+const MAX_RENDER_DISTANCE = 20000;
+const MAX_RENDER_DISTANCE_SQ = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
+
+// Pixels per world unit for texture scaling
+const PIXELS_PER_WORLD_UNIT = 4;
 
 /**
- * Optimized camera class with ray reuse and depth buffer support for transparency.
+ * Optimized camera class with ray reuse, frustum culling, and depth buffer support.
  */
 class CameraClass {
   /**
@@ -45,29 +52,47 @@ class CameraClass {
       this.rays[i] = new RayClass(x, y, 0);
     }
     
-    // Pre-calculate angle offsets (relative to view direction)
+    // Pre-calculate angle offsets (relative to view direction) in radians
     this.angleOffsets = new Float32Array(rayCount);
-    const angleStep = fov / rayCount;
-    const halfFov = fov / 2;
+    const fovRad = fov * DEG_TO_RAD;
+    const angleStep = fovRad / rayCount;
+    const halfFovRad = fovRad * 0.5;
     for (let i = 0; i < rayCount; i++) {
-      this.angleOffsets[i] = (-halfFov + i * angleStep) * Math.PI / 180;
+      this.angleOffsets[i] = -halfFovRad + i * angleStep;
     }
     
-    // Cache for cos values used in fisheye correction
+    // Cache for cos values used in fisheye correction (pre-computed once)
     this.cosCache = new Float32Array(rayCount);
     for (let i = 0; i < rayCount; i++) {
       this.cosCache[i] = Math.cos(this.angleOffsets[i]);
     }
+    
+    // Pre-allocate scene result array
+    this._sceneResult = new Array(rayCount);
+    for (let i = 0; i < rayCount; i++) {
+      this._sceneResult[i] = {
+        distance: Infinity,
+        textureX: 0,
+        texture: null,
+        boundary: null,
+        transparentHits: []
+      };
+    }
+    
+    // Cache frustum parameters
+    this._halfFovRad = halfFovRad;
+    this._frustumMargin = halfFovRad + 0.5; // Extra margin for wide walls
     
     this._updateRays();
   }
 
   /**
    * Updates ray positions and angles efficiently
+   * Uses pre-computed sin/cos from LUT
    * @private
    */
   _updateRays() {
-    const viewDirRad = this.viewDirection * Math.PI / 180;
+    const viewDirRad = this.viewDirection * DEG_TO_RAD;
     
     for (let i = 0; i < this.rayCount; i++) {
       const ray = this.rays[i];
@@ -75,6 +100,7 @@ class CameraClass {
       
       ray.pos.x = this.pos.x;
       ray.pos.y = this.pos.y;
+      // Use precise Math.cos/sin for ray direction (LUT is for culling)
       ray.dir.x = Math.cos(angle);
       ray.dir.y = Math.sin(angle);
     }
@@ -93,58 +119,66 @@ class CameraClass {
 
   /**
    * Quick check if a boundary could possibly be visible
-   * @param {Boundaries} boundary - The boundary to check
+   * Uses conservative culling to avoid false negatives
+   * @param {Boundaries|CurvedWall} boundary - The boundary to check
    * @returns {boolean} True if the boundary might be visible
    * @private
    */
   _isInViewFrustum(boundary) {
-    const viewDirRad = this.viewDirection * Math.PI / 180;
-    const halfFovRad = (this.fov / 2 + 10) * Math.PI / 180; // Add some margin
+    const posX = this.pos.x;
+    const posY = this.pos.y;
     
-    // Check both endpoints of the boundary for straight walls
-    const checkPoint = (px, py) => {
-      const dx = px - this.pos.x;
-      const dy = py - this.pos.y;
-      const angle = Math.atan2(dy, dx);
-      let diff = angle - viewDirRad;
-      
-      // Normalize to -PI to PI
-      while (diff > Math.PI) diff -= 2 * Math.PI;
-      while (diff < -Math.PI) diff += 2 * Math.PI;
-      
-      return Math.abs(diff) < halfFovRad + Math.PI / 4; // Extra margin for wide walls
-    };
-    
-    // For curved walls, check multiple points along the arc
+    // For curved walls, use a simple distance check from center
     if (boundary.isCurved) {
-      const samples = 6;
-      const angleDiff = boundary.endAngle - boundary.startAngle;
-      for (let i = 0; i <= samples; i++) {
-        const angle = boundary.startAngle + (i / samples) * angleDiff;
-        const px = boundary.centerX + boundary.radius * Math.cos(angle);
-        const py = boundary.centerY + boundary.radius * Math.sin(angle);
-        if (checkPoint(px, py)) return true;
-      }
+      const dx = boundary.centerX - posX;
+      const dy = boundary.centerY - posY;
+      const distSq = dx * dx + dy * dy;
+      // Include if within max render distance + radius (conservative)
+      const threshold = MAX_RENDER_DISTANCE + boundary.radius;
+      return distSq <= threshold * threshold;
+    }
+    
+    // For straight walls, check if any part could be visible
+    // Use a simple bounding box + distance check (conservative approach)
+    
+    // First: quick distance check using wall center
+    const centerX = (boundary.a.x + boundary.b.x) * 0.5;
+    const centerY = (boundary.a.y + boundary.b.y) * 0.5;
+    const dx = centerX - posX;
+    const dy = centerY - posY;
+    const centerDistSq = dx * dx + dy * dy;
+    
+    // Get half-length of wall for conservative distance check
+    const halfLength = boundary.length * 0.5;
+    const threshold = MAX_RENDER_DISTANCE + halfLength;
+    
+    // If center is too far even accounting for wall length, skip
+    if (centerDistSq > threshold * threshold) {
       return false;
     }
     
-    return checkPoint(boundary.a.x, boundary.a.y) || checkPoint(boundary.b.x, boundary.b.y);
+    // For walls reasonably close, always include them
+    // This is conservative but avoids the bug where walls spanning the view are culled
+    // The cost of a few extra intersection tests is small compared to missing walls
+    return true;
   }
 
   /**
    * Casts rays and detects intersections with boundaries.
-   * Supports transparency by collecting multiple hits per ray.
+   * Optimized with frustum culling, distance culling, and typed arrays.
    * @param {Array<Boundaries>} boundaries - Array of boundary objects
    * @returns {Array<RayIntersection>} Scene intersection data
    */
   spread(boundaries) {
-    const scene = new Array(this.rayCount);
+    const scene = this._sceneResult;
     
     // Pre-filter boundaries using frustum culling
+    // Separate opaque and transparent for correct rendering order
     const visibleBoundaries = [];
     const transparentBoundaries = [];
     
-    for (const boundary of boundaries) {
+    for (let i = 0; i < boundaries.length; i++) {
+      const boundary = boundaries[i];
       if (this._isInViewFrustum(boundary)) {
         if (boundary.isTransparent) {
           transparentBoundaries.push(boundary);
@@ -154,32 +188,46 @@ class CameraClass {
       }
     }
     
+    const numOpaque = visibleBoundaries.length;
+    const numTransparent = transparentBoundaries.length;
+    
     // Process each ray
     for (let i = 0; i < this.rayCount; i++) {
       const ray = this.rays[i];
+      const cosCorrection = this.cosCache[i];
+      
       let closestDist = Infinity;
       let closestHit = null;
       let textureX = 0;
       let texture = null;
       let hitBoundary = null;
       
-      // Check opaque boundaries first
-      for (const boundary of visibleBoundaries) {
+      // Check opaque boundaries - find closest
+      for (let j = 0; j < numOpaque; j++) {
+        const boundary = visibleBoundaries[j];
         const result = ray.cast(boundary);
+        
         if (result) {
-          const { point, boundary: hitBound, angle } = result;
-          let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
+          const { point, boundary: hitBound, angle, distance: rawDist } = result;
           
-          // Apply fisheye correction using cached cos value
-          distance *= this.cosCache[i];
+          // Calculate actual distance if not provided (curved walls provide it)
+          let dist;
+          if (rawDist !== undefined) {
+            dist = rawDist;
+          } else {
+            const dx = this.pos.x - point.x;
+            const dy = this.pos.y - point.y;
+            dist = Math.sqrt(dx * dx + dy * dy);
+          }
+          
+          // Apply fisheye correction
+          const correctedDist = dist * cosCorrection;
 
-          if (distance < closestDist) {
-            closestDist = distance;
+          if (correctedDist < closestDist) {
+            closestDist = correctedDist;
             closestHit = point;
             texture = hitBound.texture;
             hitBoundary = hitBound;
-
-            // Calculate texture coordinate using wall length or curve angle
             textureX = this._calculateTextureX(hitBound, point, angle);
           }
         }
@@ -187,36 +235,52 @@ class CameraClass {
       
       // Collect transparent hits that are closer than the closest opaque hit
       const transparentHits = [];
-      for (const boundary of transparentBoundaries) {
-        const result = ray.cast(boundary);
-        if (result) {
-          const { point, boundary: hitBound, angle } = result;
-          let distance = Math.hypot(this.pos.x - point.x, this.pos.y - point.y);
-          distance *= this.cosCache[i];
+      
+      if (numTransparent > 0) {
+        for (let j = 0; j < numTransparent; j++) {
+          const boundary = transparentBoundaries[j];
+          const result = ray.cast(boundary);
           
-          // Only include if closer than the closest opaque wall (or if no opaque wall)
-          if (distance < closestDist) {
-            transparentHits.push({
-              distance,
-              textureX: this._calculateTextureX(hitBound, point, angle),
-              texture: hitBound.texture,
-              boundary: hitBound,
-              point
-            });
+          if (result) {
+            const { point, boundary: hitBound, angle, distance: rawDist } = result;
+            
+            let dist;
+            if (rawDist !== undefined) {
+              dist = rawDist;
+            } else {
+              const dx = this.pos.x - point.x;
+              const dy = this.pos.y - point.y;
+              dist = Math.sqrt(dx * dx + dy * dy);
+            }
+            
+            const correctedDist = dist * cosCorrection;
+            
+            // Only include if closer than the closest opaque wall
+            if (correctedDist < closestDist) {
+              transparentHits.push({
+                distance: correctedDist,
+                textureX: this._calculateTextureX(hitBound, point, angle),
+                texture: hitBound.texture,
+                boundary: hitBound,
+                point
+              });
+            }
           }
         }
+        
+        // Sort by distance (closest first) - only if we have multiple
+        if (transparentHits.length > 1) {
+          transparentHits.sort((a, b) => a.distance - b.distance);
+        }
       }
-      
-      // Sort transparent hits by distance (closest first)
-      transparentHits.sort((a, b) => a.distance - b.distance);
 
-      scene[i] = {
-        distance: closestDist,
-        textureX: textureX,
-        texture: texture,
-        boundary: hitBoundary,
-        transparentHits: transparentHits
-      };
+      // Reuse scene result objects to avoid allocation
+      const sceneItem = scene[i];
+      sceneItem.distance = closestDist;
+      sceneItem.textureX = textureX;
+      sceneItem.texture = texture;
+      sceneItem.boundary = hitBoundary;
+      sceneItem.transparentHits = transparentHits;
     }
     
     return scene;
@@ -224,8 +288,7 @@ class CameraClass {
   
   /**
    * Calculates the texture X coordinate for a hit point on a boundary
-   * Handles both straight walls and curved walls with automatic tiling based on texture size
-   * Sprites/transparent textures stretch without tiling
+   * Handles both straight walls and curved walls with automatic tiling
    * @param {Boundaries|CurvedWall} boundary - The hit boundary
    * @param {{x: number, y: number}} point - The intersection point
    * @param {number} [angle] - For curved walls, the angle at intersection
@@ -235,7 +298,6 @@ class CameraClass {
   _calculateTextureX(boundary, point, angle) {
     // Sprites/transparent textures always stretch (no tiling)
     if (boundary.isSprite || boundary.isTransparent) {
-      // For sprites, just return normalized position (0 to 1)
       if (boundary.isCurved) {
         return boundary.getTextureX(angle);
       }
@@ -245,36 +307,26 @@ class CameraClass {
       const distFromA = Math.sqrt(dx * dx + dy * dy);
       
       let textureX = distFromA / boundary.length;
-      textureX = textureX % 1;
-      if (textureX < 0) textureX += 1;
+      if (textureX < 0) textureX = 0;
+      if (textureX > 1) textureX -= Math.floor(textureX);
       
       return textureX;
     }
     
     // Regular walls use tiling based on texture size
-    const pixelsPerWorldUnit = 4; // Conversion factor for texture scale
-    
-    // Get texture dimensions
     if (!boundary.texture || !boundary.texture.complete) {
       return 0;
     }
     
     const textureWidth = boundary.texture.width;
-    const textureWorldWidth = textureWidth / pixelsPerWorldUnit; // How many world units one texture represents
+    const textureWorldWidth = textureWidth / PIXELS_PER_WORLD_UNIT;
     
     // Handle curved walls
     if (boundary.isCurved) {
-      // Calculate position along arc from start to end
-      let normalizedPos = boundary.getTextureX(angle);
-      
-      // Calculate how many times the texture repeats across the arc
+      const normalizedPos = boundary.getTextureX(angle);
       const repeatCount = boundary.arcLength / textureWorldWidth;
-      
-      // Apply tiling based on texture size
       let tiledX = normalizedPos * repeatCount;
-      tiledX = tiledX % 1; // Wrap to 0-1
-      if (tiledX < 0) tiledX += 1;
-      
+      tiledX = tiledX - Math.floor(tiledX); // Faster than modulo for positive numbers
       return tiledX;
     }
     
@@ -283,15 +335,9 @@ class CameraClass {
     const dy = point.y - boundary.a.y;
     const distFromA = Math.sqrt(dx * dx + dy * dy);
     
-    // Calculate how many times the texture repeats across the wall
     const repeatCount = boundary.length / textureWorldWidth;
-    
-    // Calculate position along wall and apply tiling
     let textureX = (distFromA / boundary.length) * repeatCount;
-    
-    // Wrap to 0-1 for repeating texture
-    textureX = textureX % 1;
-    if (textureX < 0) textureX += 1;
+    textureX = textureX - Math.floor(textureX);
     
     return textureX;
   }

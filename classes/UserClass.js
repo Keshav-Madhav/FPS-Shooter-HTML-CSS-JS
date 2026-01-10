@@ -1,5 +1,6 @@
 import CameraClass from './CameraClass.js';
 import Boundaries from './BoundariesClass.js';
+import { DEG_TO_RAD, HALF_PI, fastSin, fastCos } from '../utils/mathLUT.js';
 
 /**
  * @typedef {Object} RayIntersection
@@ -8,10 +9,6 @@ import Boundaries from './BoundariesClass.js';
  * @property {HTMLImageElement|null} texture - The texture image of the intersected boundary, or `null` if no boundary is hit.
  * @property {Boundaries|null} boundary - The intersected boundary object, or `null` if no intersection occurs.
  */
-
-// Pre-calculated constants
-const DEG_TO_RAD = Math.PI / 180;
-const HALF_PI = Math.PI / 2;
 
 class Player {
   /**
@@ -42,7 +39,7 @@ class Player {
     this.moveRight = false;
     this.moveLeft = false;
 
-    // Cached direction values
+    // Cached direction values (updated when view direction changes)
     this._cachedViewDirRad = viewDirection * DEG_TO_RAD;
     this._cachedCosView = Math.cos(this._cachedViewDirRad);
     this._cachedSinView = Math.sin(this._cachedViewDirRad);
@@ -61,6 +58,7 @@ class Player {
 
   /**
    * Updates cached direction values when view direction changes
+   * Uses precise Math.sin/cos for movement accuracy
    * @private
    */
   _updateDirectionCache() {
@@ -82,6 +80,7 @@ class Player {
 
   /**
    * Updates the player's position based on movement state
+   * Optimized with cached trig values
    * @param {number} deltaTime - Time elapsed since last frame
    * @private
    */
@@ -107,15 +106,22 @@ class Player {
       dy -= this._cachedSinStrafe;
     }
 
-    // Normalize diagonal movement
+    // Only normalize and move if there's actual movement
     if (dx !== 0 || dy !== 0) {
-      const length = Math.sqrt(dx * dx + dy * dy);
-      dx = dx / length * this.moveSpeed;
-      dy = dy / length * this.moveSpeed;
+      // Normalize diagonal movement
+      const lengthSq = dx * dx + dy * dy;
+      if (lengthSq > 1.01) { // Only normalize if moving diagonally
+        const invLength = 1 / Math.sqrt(lengthSq);
+        dx *= invLength * this.moveSpeed;
+        dy *= invLength * this.moveSpeed;
+      } else {
+        dx *= this.moveSpeed;
+        dy *= this.moveSpeed;
+      }
+      
+      this.pos.x += dx * deltaTime;
+      this.pos.y += dy * deltaTime;
     }
-
-    this.pos.x += dx * deltaTime;
-    this.pos.y += dy * deltaTime;
   }
 
   /**
@@ -123,6 +129,7 @@ class Player {
    * @param {number} newDirection - New view direction in degrees
    */
   updateViewDirection(newDirection) {
+    // Normalize to 0-360 range
     this.viewDirection = ((newDirection % 360) + 360) % 360;
     this._updateDirectionCache();
     this.camera.update(this.pos, this.viewDirection);
