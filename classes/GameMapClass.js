@@ -41,6 +41,19 @@ class GameMap {
     
     // Goal zone (optional - for maze completion)
     this.goalZone = null;
+    
+    // Custom minimap settings (null = use defaults)
+    this.minimapSettings = null;
+  }
+  
+  /**
+   * Set custom minimap settings for this map
+   * @param {Object} settings - Minimap settings
+   * @param {number} [settings.scale] - Scale factor (lower = more zoomed in)
+   * @param {number} [settings.radius] - Visible radius
+   */
+  setMinimapSettings(settings) {
+    this.minimapSettings = settings;
   }
   
   /**

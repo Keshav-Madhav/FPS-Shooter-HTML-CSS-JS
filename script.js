@@ -130,6 +130,14 @@ function updatePosition(e) {
   player.updateViewDirection(player.viewDirection + (e.movementX * sensitivity));
 }
 
+// Default minimap settings (used when map doesn't specify custom settings)
+const defaultMinimapSettings = {
+  x: 110,
+  y: 110,
+  scale: 0.25,
+  radius: 350
+};
+
 function setActiveMap(gameMaps, mapName) {
   ActiveMap = gameMaps.find(map => map.name === mapName);
   boundaries = ActiveMap.getBoundaries();
@@ -139,6 +147,19 @@ function setActiveMap(gameMaps, mapName) {
 
   player.pos = {x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y};
   player.updateViewDirection(ActiveMap.userViewDirection);
+  
+  // Apply map-specific minimap settings or use defaults
+  if (ActiveMap.minimapSettings) {
+    miniMapSettings.scale = ActiveMap.minimapSettings.scale ?? defaultMinimapSettings.scale;
+    miniMapSettings.radius = ActiveMap.minimapSettings.radius ?? defaultMinimapSettings.radius;
+    miniMapSettings.x = ActiveMap.minimapSettings.x ?? defaultMinimapSettings.x;
+    miniMapSettings.y = ActiveMap.minimapSettings.y ?? defaultMinimapSettings.y;
+  } else {
+    miniMapSettings.scale = defaultMinimapSettings.scale;
+    miniMapSettings.radius = defaultMinimapSettings.radius;
+    miniMapSettings.x = defaultMinimapSettings.x;
+    miniMapSettings.y = defaultMinimapSettings.y;
+  }
 }
 
 /**
@@ -276,7 +297,7 @@ function draw() {
 
   const scene = player.getScene(boundaries);
   render3D(scene);
-  player.update(deltaTime);
+  player.update(deltaTime, boundaries);
 
   enemies.forEach(enemy => {
     enemy.update(deltaTime);
