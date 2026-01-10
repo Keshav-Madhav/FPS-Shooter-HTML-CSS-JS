@@ -138,9 +138,15 @@ class EnemyClass {
    * @param {number} normalizedDeltaTime - Normalized delta time from the game loop
    */
   update(normalizedDeltaTime) {
+    const currentTime = performance.now() * 0.001;
+    
     if (!this.wasDetected) {
-      this.updateMovement();
-      this.updateRotation();
+      this.updateMovement(currentTime);
+      this.updateRotation(currentTime);
+    } else {
+      // Keep frame times updated so animation resumes smoothly when detection ends
+      this.lastMoveFrameTime = currentTime;
+      this.lastRotationFrameTime = currentTime;
     }
     
     this.camera.update(this.pos, this.viewDirection);
@@ -148,12 +154,12 @@ class EnemyClass {
 
   /**
    * Updates the rotation animation using real time
+   * @param {number} currentTime - Current time in seconds
    * @private
    */
-  updateRotation() {
+  updateRotation(currentTime) {
     if (!this.isRotating) return;
 
-    const currentTime = performance.now() * 0.001;
     const frameDeltaTime = currentTime - this.lastRotationFrameTime;
     this.rotationAccumulatedTime += frameDeltaTime;
     this.lastRotationFrameTime = currentTime;
@@ -191,12 +197,12 @@ class EnemyClass {
 
   /**
    * Updates the movement animation using real time
+   * @param {number} currentTime - Current time in seconds
    * @private
    */
-  updateMovement() {
+  updateMovement(currentTime) {
     if (!this.isMoving) return;
 
-    const currentTime = performance.now() * 0.001;
     const frameDeltaTime = currentTime - this.lastMoveFrameTime;
     this.moveAccumulatedTime += frameDeltaTime;
     this.lastMoveFrameTime = currentTime;

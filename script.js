@@ -38,6 +38,10 @@ const textures = new Textures();
 let showMapSelector = false;
 let selectedMapIndex = 0;
 
+// Detection alert state
+let isPlayerDetected = false;
+let detectionAlertOpacity = 0;
+
 main_canvas.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
     player.moveForwards = true;
@@ -189,6 +193,69 @@ function switchToMap(index) {
 }
 
 /**
+ * Draws the detection alert at bottom center
+ */
+function drawDetectionAlert() {
+  // Animate opacity
+  const targetOpacity = isPlayerDetected ? 1 : 0;
+  detectionAlertOpacity += (targetOpacity - detectionAlertOpacity) * 0.15;
+  
+  if (detectionAlertOpacity < 0.01) return;
+  
+  const ctx = main_ctx;
+  const w = main_canvas.width;
+  const h = main_canvas.height;
+  
+  // Position at bottom center (with some margin from edge)
+  const y = h - 50;
+  
+  // Pulsing effect when detected
+  const pulse = isPlayerDetected ? 0.85 + Math.sin(performance.now() * 0.008) * 0.15 : 1;
+  
+  // Draw background pill
+  const text = '⚠ DETECTED';
+  ctx.save();
+  ctx.font = `bold ${Math.floor(h * 0.028)}px Arial`;
+  const textWidth = ctx.measureText(text).width;
+  const paddingX = 24;
+  const pillWidth = textWidth + paddingX * 2;
+  const pillHeight = h * 0.045;
+  const pillX = w / 2 - pillWidth / 2;
+  const pillY = y - pillHeight / 2;
+  const pillRadius = pillHeight / 2;
+  
+  ctx.globalAlpha = detectionAlertOpacity * pulse;
+  
+  // Pill background with red glow
+  ctx.shadowColor = 'rgba(255, 60, 60, 0.8)';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = 'rgba(180, 30, 30, 0.9)';
+  ctx.beginPath();
+  // Draw rounded rectangle manually for compatibility
+  ctx.moveTo(pillX + pillRadius, pillY);
+  ctx.lineTo(pillX + pillWidth - pillRadius, pillY);
+  ctx.arc(pillX + pillWidth - pillRadius, pillY + pillRadius, pillRadius, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(pillX + pillRadius, pillY + pillHeight);
+  ctx.arc(pillX + pillRadius, pillY + pillRadius, pillRadius, Math.PI / 2, -Math.PI / 2);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Border
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(255, 100, 100, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  
+  // Text
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, w / 2, y);
+  
+  ctx.restore();
+}
+
+/**
  * Draws the map selector UI
  */
 function drawMapSelector() {
@@ -318,10 +385,14 @@ function draw() {
   render3D(scene, player.eyeHeight);
   player.update(deltaTime, boundaries);
 
+  // Track if any enemy detects the player this frame
+  isPlayerDetected = false;
+  
   enemies.forEach(enemy => {
     enemy.update(deltaTime);
     const detected = enemy.detectPlayer(player, boundaries);
     if (detected.isDetected) {
+      isPlayerDetected = true;
       enemy.viewDirection = Math.atan2(detected.userPosition.y - enemy.pos.y, detected.userPosition.x - enemy.pos.x) * 180 / Math.PI;
     }
 
@@ -346,6 +417,9 @@ function draw() {
     main_ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
     main_ctx.fillText('Press M or Tab to change map | R to reset | 1-3 quick select', 10, 10 + main_canvas.height * 0.025);
   }
+  
+  // Draw detection alert at bottom center
+  drawDetectionAlert();
   
   // Draw map selector overlay
   drawMapSelector();

@@ -795,7 +795,7 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
     let moveTime = 2 + Math.random() * 1.5;
     let rotationTime = 0.8 + Math.random() * 0.5;
     let initialViewDir;
-    let visibilityDistance = cellSize * 3.5;
+    let visibilityDistance = cellSize * 1.5; // Reduced detection range
     let fov = 75;
     
     switch (enemyType) {
@@ -816,7 +816,7 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
           rotationStops = [90, 90, 90, 90];
           rotationTime = 2;
         }
-        visibilityDistance = cellSize * 4;
+        visibilityDistance = cellSize * 2;
         break;
       }
       
@@ -843,7 +843,7 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
         
         rotationTime = 1.5 + Math.random();
         fov = 85; // Wider FOV for guards
-        visibilityDistance = cellSize * 5;
+        visibilityDistance = cellSize * 2.5;
         break;
       }
       
@@ -872,7 +872,7 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
         rotationStops = [15, -30, 15]; // Slight left-right scanning
         rotationTime = 2.5 + Math.random();
         fov = 70;
-        visibilityDistance = cellSize * 6; // Long sight line
+        visibilityDistance = cellSize * 3; // Reduced sight line
         break;
       }
     }

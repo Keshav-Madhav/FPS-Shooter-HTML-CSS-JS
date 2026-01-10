@@ -162,7 +162,7 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxCon
   const cy = posY + offsetY;
   
   // More rays for smoother enemy cones
-  const rayCount = 16;
+  const rayCount = 32;
   const angleStep = (halfFov * 2) / rayCount;
   
   ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';

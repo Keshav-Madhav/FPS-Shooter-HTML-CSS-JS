@@ -59,15 +59,19 @@ const drawFPS = (width, height, context) => {
   }
 
   // Draw FPS metrics on canvas
+  context.save();
+  context.textAlign = 'left';
+  context.textBaseline = 'top';
   context.fillStyle = 'rgba(0, 0, 0, 0.7)';
   context.fillRect(width - 90, 10, 85, 50);
   context.fillStyle = '#00ff00';
   context.font = 'bold 12px monospace';
-  context.fillText(`FPS: ${currentFps}`, width - 85, 25);
+  context.fillText(`FPS: ${currentFps}`, width - 85, 14);
   context.fillStyle = '#ffffff';
   context.font = '11px monospace';
-  context.fillText(`Avg: ${avgFps}`, width - 85, 40);
-  context.fillText(`1%L: ${onePercentLowFps}`, width - 85, 53);
+  context.fillText(`Avg: ${avgFps}`, width - 85, 30);
+  context.fillText(`1%L: ${onePercentLowFps}`, width - 85, 44);
+  context.restore();
 
   return { currentFps, avgFps, onePercentLowFps };
 }
