@@ -41,12 +41,14 @@ class CameraClass {
    * @param {number} options.fov - Field of view in degrees
    * @param {number} options.rayCount - Number of rays to cast
    * @param {number} options.viewDirection - Initial view direction in degrees
+   * @param {number} options.eyeHeight - Initial eye height for vertical parallax
    */
-  constructor({ x, y, fov = 60, rayCount = 1000, viewDirection = 0 }) {
+  constructor({ x, y, fov = 80, rayCount = 1000, viewDirection = 0, eyeHeight = 0 }) {
     this.pos = { x, y };
     this.fov = fov;
     this.rayCount = rayCount;
     this.viewDirection = viewDirection;
+    this.eyeHeight = eyeHeight; // Vertical position for parallax (-1 to 1, 0 = center)
     
     // Pre-allocate rays array - we'll reuse these instead of recreating
     this.rays = new Array(rayCount);
@@ -110,13 +112,46 @@ class CameraClass {
   }
 
   /**
-   * Updates camera position and view direction
+   * Updates camera position, view direction, and eye height
    * @param {Object} pos - New position {x, y}
    * @param {number} viewDirection - New view direction in degrees
+   * @param {number} [eyeHeight=0] - Vertical eye height for parallax
    */
-  update(pos, viewDirection) {
+  update(pos, viewDirection, eyeHeight = 0) {
     this.pos = pos;
     this.viewDirection = viewDirection;
+    this.eyeHeight = eyeHeight;
+    this._updateRays();
+  }
+
+  /**
+   * Updates the field of view dynamically
+   * Recalculates angle offsets and cos cache for fisheye correction
+   * @param {number} newFov - New field of view in degrees
+   */
+  setFov(newFov) {
+    if (this.fov === newFov) return;
+    
+    this.fov = newFov;
+    const fovRad = newFov * DEG_TO_RAD;
+    const angleStep = fovRad / this.rayCount;
+    const halfFovRad = fovRad * 0.5;
+    
+    // Recalculate angle offsets
+    for (let i = 0; i < this.rayCount; i++) {
+      this.angleOffsets[i] = -halfFovRad + i * angleStep;
+    }
+    
+    // Recalculate cos cache for fisheye correction
+    for (let i = 0; i < this.rayCount; i++) {
+      this.cosCache[i] = Math.cos(this.angleOffsets[i]);
+    }
+    
+    // Update frustum parameters
+    this._halfFovRad = halfFovRad;
+    this._frustumMargin = halfFovRad + 0.5;
+    
+    // Update rays with new angles
     this._updateRays();
   }
 

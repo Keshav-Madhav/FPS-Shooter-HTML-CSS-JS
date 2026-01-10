@@ -234,6 +234,7 @@ class EnemyClass {
   /**
    * Detects if the player is visible to the enemy.
    * Optimized with squared distance checks and early exits.
+   * Crouching reduces detection range and cone by half.
    * @param {Player} player - The player object to check for detection.
    * @param {Array<Boundaries>} boundaries - Array of boundary objects for the scene.
    * @returns {{isDetected: boolean, distance: number|null, userPosition: Object|null, relativeAngle: number|null}}
@@ -242,9 +243,14 @@ class EnemyClass {
     const dx = player.pos.x - this.pos.x;
     const dy = player.pos.y - this.pos.y;
 
+    // Crouching reduces detection range and cone by half
+    const crouchMultiplier = player.isCrouching ? 0.5 : 1.0;
+    const effectiveVisibilityDistSq = this._visibilityDistanceSq * crouchMultiplier * crouchMultiplier;
+    const effectiveHalfFov = this._halfFov * crouchMultiplier;
+
     // Quick squared distance check (avoids sqrt)
     const distSq = dx * dx + dy * dy;
-    if (distSq > this._visibilityDistanceSq) {
+    if (distSq > effectiveVisibilityDistSq) {
       this.wasDetected = false;
       return { isDetected: false, distance: null, userPosition: null, relativeAngle: null };
     }
@@ -258,8 +264,8 @@ class EnemyClass {
     // Normalize relative angle
     let relativeAngle = ((normalizedAngle - this.viewDirection + 360) % 360);
 
-    // Check if within FOV
-    if (relativeAngle <= this._halfFov || relativeAngle >= 360 - this._halfFov) {
+    // Check if within FOV (using effective half FOV based on crouch state)
+    if (relativeAngle <= effectiveHalfFov || relativeAngle >= 360 - effectiveHalfFov) {
       // Cast ray to check for obstructions
       const ray = new RayClass(this.pos.x, this.pos.y, angleToPlayer * DEG_TO_RAD);
       

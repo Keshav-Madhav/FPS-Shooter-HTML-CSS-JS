@@ -24,6 +24,7 @@ const HEIGHT_SCALE_FACTOR = 100;
 const BRIGHTNESS_SCALE_FACTOR = 100;
 const DARKNESS_EXPONENT = 2.0;
 const SMOOTHING_RADIUS = 3;
+const PARALLAX_STRENGTH = 0.5; // How much eye height affects wall position
 
 // Canvas dimensions cache
 let cachedWidth = 0;
@@ -195,10 +196,13 @@ function renderTranslucentSlice(ctx, x, y, width, height, texture, color, textur
  * - Pre-calculated brightness with smoothing
  * - Typed arrays for better memory performance
  * - Reduced draw calls and state changes
+ * - Vertical parallax support for jumping and crouching
  * 
  * @param {RayIntersection[]} scene - An array of intersection data for each ray.
+ * @param {number} [eyeHeight=0] - Vertical camera position (-1 to 1, 0 = center)
+ *                                  Positive = looking from above, negative = from below
  */
-function render3D(scene) {
+function render3D(scene, eyeHeight = 0) {
   const sceneLength = scene.length;
   
   // Update dimension cache and allocate buffers
@@ -243,7 +247,12 @@ function render3D(scene) {
     // Calculate wall height using perspective projection
     // Multiply by HEIGHT_SCALE_FACTOR / distance
     const wallHeight = (cachedHeight * HEIGHT_SCALE_FACTOR) / distance;
-    const y = cachedHalfHeight - wallHeight * 0.5;
+    
+    // Distance-based parallax: closer walls (larger wallHeight) move more
+    // Positive eyeHeight (jumping) = walls shift down, negative (crouching) = walls shift up
+    // The offset is proportional to wallHeight, so close walls move more than distant ones
+    const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
+    const y = cachedHalfHeight - wallHeight * 0.5 + verticalOffset;
     const x = i * sliceWidth;
     
     const isTransparent = boundary && boundary.isTransparent;
@@ -296,7 +305,9 @@ function render3D(scene) {
     const { rayIndex, distance, textureX, texture, color } = slice;
     
     const wallHeight = (cachedHeight * HEIGHT_SCALE_FACTOR) / distance;
-    const y = cachedHalfHeight - wallHeight * 0.5;
+    // Distance-based parallax for transparent walls too
+    const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
+    const y = cachedHalfHeight - wallHeight * 0.5 + verticalOffset;
     const x = rayIndex * sliceWidth;
     
     // Calculate brightness for this distance

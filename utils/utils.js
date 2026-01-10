@@ -25,29 +25,43 @@ function resizeCanvas({ canvasArray, ratio }) {
   }
 }
 
+// Background parallax strength (reduced for subtler horizon movement)
+const BG_PARALLAX_STRENGTH = 0.2;
+
 /**
- * Draws the background gradient (sky and floor)
+ * Draws the background gradient (sky and floor) with optional vertical parallax
+ * @param {CanvasRenderingContext2D} background_ctx - The background canvas context
+ * @param {number} height - Canvas height
+ * @param {number} width - Canvas width
+ * @param {number} [eyeHeight=0] - Vertical camera position for parallax
  */
-function drawBackground(background_ctx, height, width) {
+function drawBackground(background_ctx, height, width, eyeHeight = 0) {
   const topStartLuminosity = 55;
   const topEndLuminosity = 20;
   const bottomStartLuminosity = 40;
   const bottomEndLuminosity = 10;
-  const halfHeight = height * 0.5;
+  
+  // Calculate horizon offset based on eye height
+  // Positive eyeHeight (jumping) = horizon moves down, shows more sky
+  // Negative eyeHeight (crouching) = horizon moves up, shows more floor
+  const horizonOffset = eyeHeight * height * BG_PARALLAX_STRENGTH;
+  const horizonY = height * 0.5 + horizonOffset;
 
   background_ctx.clearRect(0, 0, width, height);
 
-  const topGradient = background_ctx.createLinearGradient(0, 0, 0, halfHeight);
+  // Draw sky (from top to horizon)
+  const topGradient = background_ctx.createLinearGradient(0, 0, 0, horizonY);
   topGradient.addColorStop(0, `hsl(210,20%,${topStartLuminosity}%)`);
   topGradient.addColorStop(1, `hsl(210,20%,${topEndLuminosity}%)`);
   background_ctx.fillStyle = topGradient;
-  background_ctx.fillRect(0, 0, width, halfHeight);
+  background_ctx.fillRect(0, 0, width, horizonY);
 
-  const bottomGradient = background_ctx.createLinearGradient(0, height, 0, halfHeight);
+  // Draw floor (from horizon to bottom)
+  const bottomGradient = background_ctx.createLinearGradient(0, height, 0, horizonY);
   bottomGradient.addColorStop(0, `hsl(0,0%,${bottomStartLuminosity}%)`);
   bottomGradient.addColorStop(1, `hsl(0,0%,${bottomEndLuminosity}%)`);
   background_ctx.fillStyle = bottomGradient;
-  background_ctx.fillRect(0, halfHeight, width, halfHeight);
+  background_ctx.fillRect(0, horizonY, width, height - horizonY);
 }
 
 // Reusable ray object for minimap (avoid allocations)
@@ -125,13 +139,24 @@ function getNearbyBoundaries(boundaries, posX, posY, maxDist) {
 /**
  * Draws enemy FOV cone that stops at walls
  * Uses only 6 rays for performance
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Object} enemy - Enemy object
+ * @param {number} offsetX - X offset for centering
+ * @param {number} offsetY - Y offset for centering
+ * @param {Array} nearbyBoundaries - Boundaries to check for ray intersection
+ * @param {number} [maxConeDistance] - Optional max distance to clamp cone (for minimap bounds)
+ * @param {boolean} [playerCrouching=false] - Whether player is crouching (reduces detection)
  */
-function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries) {
+function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxConeDistance = Infinity, playerCrouching = false) {
   const posX = enemy.pos.x;
   const posY = enemy.pos.y;
   const viewAngle = enemy.viewDirection * DEG_TO_RAD;
-  const halfFov = (enemy.fov * 0.5) * DEG_TO_RAD;
-  const maxDist = enemy.visibilityDistance;
+  
+  // Crouching reduces enemy detection range and cone by half
+  const crouchMultiplier = playerCrouching ? 0.5 : 1.0;
+  const halfFov = (enemy.fov * 0.5 * crouchMultiplier) * DEG_TO_RAD;
+  // Clamp maxDist to the smaller of visibility distance and minimap bounds
+  const maxDist = Math.min(enemy.visibilityDistance * crouchMultiplier, maxConeDistance);
   
   const cx = posX + offsetX;
   const cy = posY + offsetY;
@@ -146,7 +171,9 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries) {
   
   for (let i = 0; i <= rayCount; i++) {
     const angle = viewAngle - halfFov + i * angleStep;
-    const dist = castMinimapRay(posX, posY, angle, maxDist, nearbyBoundaries);
+    let dist = castMinimapRay(posX, posY, angle, maxDist, nearbyBoundaries);
+    // Double-clamp to ensure cone stays within bounds
+    dist = Math.min(dist, maxDist);
     const hitX = posX + Math.cos(angle) * dist + offsetX;
     const hitY = posY + Math.sin(angle) * dist + offsetY;
     ctx.lineTo(hitX, hitY);
@@ -317,8 +344,9 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
       enemy.visibilityDistance
     );
     
-    // Draw FOV cone
-    drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries);
+    // Draw FOV cone - clamp to minimap radius to prevent infinite cones
+    // Pass player crouch state to show reduced detection when crouching
+    drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, radius, user.isCrouching);
 
     // Enemy position dot
     const enemyCenterX = enemy.pos.x + offsetX;

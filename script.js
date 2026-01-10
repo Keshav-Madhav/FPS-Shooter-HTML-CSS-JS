@@ -50,7 +50,18 @@ main_canvas.addEventListener('keydown', (e) => {
   }
 
   if(e.key === 'Shift'){
-    player.moveSpeed = 3;
+    player.setSprint(true);
+  }
+  
+  // Jump with Space bar
+  if (e.key === ' ') {
+    e.preventDefault(); // Prevent page scrolling
+    player.jump();
+  }
+  
+  // Crouch with Control or C key
+  if (e.key === 'Control' || e.key === 'c' || e.key === 'C') {
+    player.setCrouch(true);
   }
 
   if (e.key === 'r' || e.key === 'R') {
@@ -105,7 +116,12 @@ main_canvas.addEventListener('keyup', (e) => {
   }
 
   if(e.key === 'Shift'){
-    player.moveSpeed = 1;
+    player.setSprint(false);
+  }
+  
+  // Release crouch with Control or C key
+  if (e.key === 'Control' || e.key === 'c' || e.key === 'C') {
+    player.setCrouch(false);
   }
 });
 
@@ -284,6 +300,9 @@ function setUpGame() {
 
 function draw() {
   main_ctx.clearRect(0, 0, main_canvas.width, main_canvas.height);
+  
+  // Redraw background with current eye height for parallax effect
+  drawBackground(background_ctx, background_canvas.height, background_canvas.width, player.eyeHeight);
 
   const deltaTime = getDeltaTime(120);
 
@@ -296,7 +315,7 @@ function draw() {
   }
 
   const scene = player.getScene(boundaries);
-  render3D(scene);
+  render3D(scene, player.eyeHeight);
   player.update(deltaTime, boundaries);
 
   enemies.forEach(enemy => {

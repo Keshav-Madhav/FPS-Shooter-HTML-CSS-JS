@@ -14,6 +14,25 @@ import { DEG_TO_RAD, HALF_PI, TWO_PI, fastSin, fastCos, normalizeAngle } from '.
 const PLAYER_RADIUS = 12; // Player collision radius
 const COLLISION_MARGIN = 0.5; // Small margin to prevent floating point issues
 
+// Vertical movement constants
+const BASE_EYE_HEIGHT = 0; // Normal standing eye level (0 = center of screen)
+const CROUCH_EYE_HEIGHT = -0.25; // Crouching lowers the view (negative = lower)
+const JUMP_STRENGTH = 0.03; // Initial jump velocity (faster upward movement)
+const GRAVITY = 0.00085; // Gravity acceleration (stronger for snappier falls)
+const MAX_EYE_HEIGHT = 1.5; // Maximum jump height - high enough for natural arc
+const UNCROUCH_SPEED = 0.08; // How fast player stands up from crouch
+
+// Speed constants
+const BASE_MOVE_SPEED = 1; // Normal walking speed
+const CROUCH_SPEED_MULTIPLIER = 0.7; // 70% speed when crouching
+const SPRINT_SPEED_MULTIPLIER = 3; // 3x speed when sprinting
+
+// FOV constants
+const BASE_FOV = 80; // Default field of view
+const SLOW_FOV = 83; // Slightly wider FOV when moving slow (crouching)
+const FAST_FOV = 77; // Slightly narrower FOV when moving fast (sprinting)
+const FOV_LERP_SPEED = 0.15; // How fast FOV transitions
+
 class Player {
   /**
    * Creates a player instance with an attached camera
@@ -30,14 +49,15 @@ class Player {
     x, 
     y, 
     viewDirection = 0, 
-    moveSpeed = 1, 
-    fov = 60, 
+    moveSpeed = BASE_MOVE_SPEED, 
+    fov = BASE_FOV, 
     rayCount = 1000,
     collisionRadius = PLAYER_RADIUS
   }) {
     this.pos = { x, y };
     this.viewDirection = viewDirection;
-    this.moveSpeed = moveSpeed;
+    this.baseMoveSpeed = moveSpeed; // Store base speed
+    this.moveSpeed = moveSpeed; // Current effective speed
     this.collisionRadius = collisionRadius;
     
     // Movement state
@@ -45,6 +65,19 @@ class Player {
     this.moveBackwards = false;
     this.moveRight = false;
     this.moveLeft = false;
+    this.isSprinting = false; // Sprinting state
+    
+    // Vertical movement state
+    this.eyeHeight = BASE_EYE_HEIGHT; // Current vertical position (-1 to 1 range, 0 = center)
+    this.verticalVelocity = 0; // Current vertical velocity for jumping
+    this.isJumping = false; // Whether player is in the air
+    this.isCrouching = false; // Whether player is crouching
+    this.wantsToCrouch = false; // Input state for crouch key
+    
+    // FOV state
+    this.baseFov = fov; // Base FOV
+    this.currentFov = fov; // Current interpolated FOV
+    this.targetFov = fov; // Target FOV to lerp towards
     
     // Boundaries reference for collision detection
     this._boundaries = [];
@@ -62,7 +95,8 @@ class Player {
       y,
       fov,
       rayCount,
-      viewDirection
+      viewDirection,
+      eyeHeight: this.eyeHeight
     });
   }
 
@@ -88,12 +122,155 @@ class Player {
     if (boundaries) {
       this._boundaries = boundaries;
     }
+    
+    // Update movement speed based on state
+    this._updateMovementSpeed();
+    
     this.updatePosition(deltaTime);
+    this.updateVerticalPosition(deltaTime);
+    this.updateFov(deltaTime);
     
     // Always check for collisions (handles moving walls pushing the player)
     this._resolveStaticCollisions();
     
-    this.camera.update(this.pos, this.viewDirection);
+    this.camera.update(this.pos, this.viewDirection, this.eyeHeight);
+  }
+
+  /**
+   * Updates movement speed based on crouch/sprint state
+   * @private
+   */
+  _updateMovementSpeed() {
+    if (this.isCrouching) {
+      this.moveSpeed = this.baseMoveSpeed * CROUCH_SPEED_MULTIPLIER;
+    } else if (this.isSprinting) {
+      this.moveSpeed = this.baseMoveSpeed * SPRINT_SPEED_MULTIPLIER;
+    } else {
+      this.moveSpeed = this.baseMoveSpeed;
+    }
+  }
+
+  /**
+   * Updates FOV with smooth interpolation based on movement speed
+   * FOV only changes when actually moving - speed dependent
+   * @param {number} deltaTime - Time elapsed since last frame
+   * @private
+   */
+  updateFov(deltaTime) {
+    // Check if player is actually moving
+    const isMoving = this.moveForwards || this.moveBackwards || this.moveLeft || this.moveRight;
+    
+    // Determine target FOV based on movement speed
+    if (isMoving && this.isSprinting) {
+      // Moving fast = narrower FOV (focused/zoomed in feel)
+      this.targetFov = FAST_FOV;
+    } else if (isMoving && this.isCrouching) {
+      // Moving slow = wider FOV (zoomed out feel)
+      this.targetFov = SLOW_FOV;
+    } else {
+      // Not moving or normal speed = base FOV
+      this.targetFov = this.baseFov;
+    }
+    
+    // Smoothly interpolate current FOV towards target
+    const fovDiff = this.targetFov - this.currentFov;
+    if (Math.abs(fovDiff) > 0.1) {
+      this.currentFov += fovDiff * FOV_LERP_SPEED * deltaTime;
+      this.camera.setFov(this.currentFov);
+    } else if (this.currentFov !== this.targetFov) {
+      this.currentFov = this.targetFov;
+      this.camera.setFov(this.currentFov);
+    }
+  }
+
+  /**
+   * Updates vertical position for jumping and crouching with proper physics
+   * @param {number} deltaTime - Time elapsed since last frame
+   * @private
+   */
+  updateVerticalPosition(deltaTime) {
+    // Handle crouching
+    if (this.wantsToCrouch && !this.isJumping) {
+      // Smoothly transition to crouch height
+      const crouchSpeed = 0.02;
+      this.isCrouching = true;
+      this.eyeHeight += (CROUCH_EYE_HEIGHT - this.eyeHeight) * crouchSpeed * deltaTime;
+      
+      // Clamp to crouch height
+      if (this.eyeHeight < CROUCH_EYE_HEIGHT) {
+        this.eyeHeight = CROUCH_EYE_HEIGHT;
+      }
+    } else if (this.isJumping) {
+      // Apply gravity to vertical velocity
+      this.verticalVelocity -= GRAVITY * deltaTime;
+      
+      // Update eye height based on velocity
+      this.eyeHeight += this.verticalVelocity * deltaTime;
+      
+      // Check if landed
+      const groundLevel = this.isCrouching ? CROUCH_EYE_HEIGHT : BASE_EYE_HEIGHT;
+      if (this.eyeHeight <= groundLevel && this.verticalVelocity < 0) {
+        this.eyeHeight = groundLevel;
+        this.verticalVelocity = 0;
+        this.isJumping = false;
+      }
+      
+      // Clamp max height
+      if (this.eyeHeight > MAX_EYE_HEIGHT) {
+        this.eyeHeight = MAX_EYE_HEIGHT;
+        this.verticalVelocity = 0;
+      }
+    } else if (!this.wantsToCrouch && this.isCrouching) {
+      // Stand up from crouch smoothly
+      this.eyeHeight += (BASE_EYE_HEIGHT - this.eyeHeight) * UNCROUCH_SPEED * deltaTime;
+      
+      // Check if fully standing
+      if (this.eyeHeight >= BASE_EYE_HEIGHT - 0.01) {
+        this.eyeHeight = BASE_EYE_HEIGHT;
+        this.isCrouching = false;
+      }
+    } else if (!this.isJumping && !this.isCrouching) {
+      // Return to base eye height smoothly (for any edge cases)
+      const returnSpeed = 0.02;
+      this.eyeHeight += (BASE_EYE_HEIGHT - this.eyeHeight) * returnSpeed * deltaTime;
+    }
+  }
+
+  /**
+   * Initiates a jump if the player is on the ground
+   */
+  jump() {
+    if (!this.isJumping) {
+      this.isJumping = true;
+      // Jump force is reduced if crouching
+      const jumpMultiplier = this.isCrouching ? 0.7 : 1.0;
+      this.verticalVelocity = JUMP_STRENGTH * jumpMultiplier;
+      // Uncrouch when jumping
+      if (this.isCrouching) {
+        this.wantsToCrouch = false;
+        this.isCrouching = false;
+      }
+    }
+  }
+
+  /**
+   * Sets the crouch state
+   * @param {boolean} crouching - Whether the player wants to crouch
+   */
+  setCrouch(crouching) {
+    this.wantsToCrouch = crouching;
+  }
+
+  /**
+   * Sets the sprint state
+   * @param {boolean} sprinting - Whether the player is sprinting
+   */
+  setSprint(sprinting) {
+    // Can't sprint while crouching
+    if (this.isCrouching && sprinting) {
+      return;
+    }
+    this.isSprinting = sprinting;
   }
   
   /**
