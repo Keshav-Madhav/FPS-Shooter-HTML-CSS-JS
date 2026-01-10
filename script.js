@@ -4,6 +4,7 @@ import Textures from "./classes/TexturesClass.js";
 import Player from "./classes/UserClass.js";
 import EnemyClass from "./classes/EnemyClass.js";
 import { createTestMap } from "./maps/testMap.js";
+import { createMazeMap } from "./maps/mazeMap.js";
 import { getDeltaTime } from "./utils/deltaTime.js";
 import { drawFPS } from "./utils/fpsDisplay.js";
 import { render3D } from "./utils/render3DFunction.js";
@@ -111,12 +112,26 @@ function setUpGame() {
 
   // Add maps
   gameMaps.push(createTestMap(textures, 'Test Map'));
+  
+  // Add procedural maze map with thick walls
+  gameMaps.push(createMazeMap(textures, 'Maze Map', {
+    cols: 20,
+    rows: 20,
+    cellSize: 90,
+    wallThickness: 15,
+    curveChance: 1.0,   // All corners curved
+    loopChance: 0.1,    // 20% chance for extra passages (creates forks)
+    roomCount: 2,       // 5 open rooms
+    roomMinSize: 2,
+    roomMaxSize: 4,
+    enemyCount: 12
+  }));
 
   // Create user
   player = new Player({ x: 0, y: 0 });
 
-  // Set active map
-  setActiveMap(gameMaps, 'Test Map');
+  // Set active map - change to 'Maze Map' to play the maze
+  setActiveMap(gameMaps, 'Maze Map');
 }
 
 function draw() {
