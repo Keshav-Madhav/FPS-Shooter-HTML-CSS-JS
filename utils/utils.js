@@ -1,12 +1,10 @@
 import Boundaries from "../classes/BoundariesClass.js";
 import Player from "../classes/UserClass.js";
+import RayClass from "../classes/RayClass.js";
 import { DEG_TO_RAD, fastSin, fastCos } from "./mathLUT.js";
 
 /**
  * Resizes all canvas elements in the canvasArray to maintain the specified aspect ratio.
- * @param {Object} options - The options for resizing the canvas.
- * @param {HTMLCanvasElement[]} options.canvasArray - An array of canvas elements to resize.
- * @param {number} [options.ratio] - The target aspect ratio for the canvas elements.
  */
 function resizeCanvas({ canvasArray, ratio }) {
   const targetRatio = ratio || window.innerWidth / window.innerHeight;
@@ -29,9 +27,6 @@ function resizeCanvas({ canvasArray, ratio }) {
 
 /**
  * Draws the background gradient (sky and floor)
- * @param {CanvasRenderingContext2D} background_ctx - Background canvas context
- * @param {number} height - Canvas height
- * @param {number} width - Canvas width
  */
 function drawBackground(background_ctx, height, width) {
   const topStartLuminosity = 55;
@@ -42,14 +37,12 @@ function drawBackground(background_ctx, height, width) {
 
   background_ctx.clearRect(0, 0, width, height);
 
-  // Top gradient (sky)
   const topGradient = background_ctx.createLinearGradient(0, 0, 0, halfHeight);
   topGradient.addColorStop(0, `hsl(210,20%,${topStartLuminosity}%)`);
   topGradient.addColorStop(1, `hsl(210,20%,${topEndLuminosity}%)`);
   background_ctx.fillStyle = topGradient;
   background_ctx.fillRect(0, 0, width, halfHeight);
 
-  // Bottom gradient (floor)
   const bottomGradient = background_ctx.createLinearGradient(0, height, 0, halfHeight);
   bottomGradient.addColorStop(0, `hsl(0,0%,${bottomStartLuminosity}%)`);
   bottomGradient.addColorStop(1, `hsl(0,0%,${bottomEndLuminosity}%)`);
@@ -57,20 +50,131 @@ function drawBackground(background_ctx, height, width) {
   background_ctx.fillRect(0, halfHeight, width, halfHeight);
 }
 
+// Reusable ray object for minimap (avoid allocations)
+let minimapRay = null;
+
+/**
+ * Casts a ray and returns the distance to the nearest wall
+ * Optimized: reuses ray object, only checks nearby boundaries
+ */
+function castMinimapRay(startX, startY, angle, maxDist, nearbyBoundaries) {
+  if (!minimapRay) {
+    minimapRay = new RayClass(startX, startY, angle);
+  } else {
+    minimapRay.pos.x = startX;
+    minimapRay.pos.y = startY;
+    minimapRay.dir.x = Math.cos(angle);
+    minimapRay.dir.y = Math.sin(angle);
+  }
+  
+  let closestDist = maxDist;
+  
+  for (let i = 0; i < nearbyBoundaries.length; i++) {
+    const boundary = nearbyBoundaries[i];
+    const result = minimapRay.cast(boundary);
+    if (result) {
+      const dx = result.point.x - startX;
+      const dy = result.point.y - startY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < closestDist) {
+        closestDist = dist;
+      }
+    }
+  }
+  
+  return closestDist;
+}
+
+/**
+ * Gets boundaries near a position (for optimized ray casting)
+ * Uses simple distance check from boundary center
+ */
+function getNearbyBoundaries(boundaries, posX, posY, maxDist) {
+  const nearby = [];
+  const maxDistSq = maxDist * maxDist;
+  
+  for (let i = 0; i < boundaries.length; i++) {
+    const b = boundaries[i];
+    
+    // Skip transparent
+    if (b.isTransparent) continue;
+    
+    // Quick distance check
+    let cx, cy;
+    if (b.isCurved) {
+      cx = b.centerX;
+      cy = b.centerY;
+    } else {
+      cx = (b.a.x + b.b.x) * 0.5;
+      cy = (b.a.y + b.b.y) * 0.5;
+    }
+    
+    const dx = cx - posX;
+    const dy = cy - posY;
+    const distSq = dx * dx + dy * dy;
+    
+    // Include if within range (with generous margin for wall length)
+    if (distSq < maxDistSq * 4) {
+      nearby.push(b);
+    }
+  }
+  
+  return nearby;
+}
+
+/**
+ * Draws enemy FOV cone that stops at walls
+ * Uses only 6 rays for performance
+ */
+function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries) {
+  const posX = enemy.pos.x;
+  const posY = enemy.pos.y;
+  const viewAngle = enemy.viewDirection * DEG_TO_RAD;
+  const halfFov = (enemy.fov * 0.5) * DEG_TO_RAD;
+  const maxDist = enemy.visibilityDistance;
+  
+  const cx = posX + offsetX;
+  const cy = posY + offsetY;
+  
+  // More rays for smoother enemy cones
+  const rayCount = 16;
+  const angleStep = (halfFov * 2) / rayCount;
+  
+  ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  
+  for (let i = 0; i <= rayCount; i++) {
+    const angle = viewAngle - halfFov + i * angleStep;
+    const dist = castMinimapRay(posX, posY, angle, maxDist, nearbyBoundaries);
+    const hitX = posX + Math.cos(angle) * dist + offsetX;
+    const hitY = posY + Math.sin(angle) * dist + offsetY;
+    ctx.lineTo(hitX, hitY);
+  }
+  
+  ctx.closePath();
+  ctx.fill();
+}
+
 /**
  * Draws a circular minimap on the main canvas
- * Optimized with reduced object allocations and cached calculations
- * @param {CanvasRenderingContext2D} ctx - The rendering context
- * @param {Array<Boundaries>} boundaries - Array of boundary objects
- * @param {Player} user - The user object
- * @param {EnemyClass[]} enemies - Array of enemy objects
+ * Optimized: only enemies within minimap radius get ray-traced FOV cones
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Array} boundaries - Array of boundary objects
+ * @param {Object} user - Player object
+ * @param {Array} enemies - Array of enemy objects
+ * @param {Object} [goalZone] - Optional goal zone {x, y, radius}
  */
-function drawMinimap(ctx, boundaries, user, enemies) {
+function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
   const scale = miniMapSettings.scale;
   const invScale = 1 / scale;
   const centerX = miniMapSettings.x * invScale;
   const centerY = miniMapSettings.y * invScale;
   const radius = miniMapSettings.radius;
+  
+  // Culling radius for enemies (slightly larger than minimap)
+  const enemyCullRadius = radius * 1.25;
+  const enemyCullRadiusSq = enemyCullRadius * enemyCullRadius;
 
   ctx.save();
   ctx.scale(scale, scale);
@@ -88,24 +192,58 @@ function drawMinimap(ctx, boundaries, user, enemies) {
   // Calculate offset to keep player centered
   const offsetX = centerX - user.pos.x;
   const offsetY = centerY - user.pos.y;
+  
+  // Draw goal zone if provided (pulsing green circle)
+  if (goalZone) {
+    const goalX = goalZone.x + offsetX;
+    const goalY = goalZone.y + offsetY;
+    const goalRadius = goalZone.radius;
+    
+    // Pulsing effect
+    const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.004);
+    
+    // Outer glow
+    const goalGradient = ctx.createRadialGradient(goalX, goalY, 0, goalX, goalY, goalRadius * 1.5);
+    goalGradient.addColorStop(0, `rgba(0, 255, 100, ${0.6 * pulse})`);
+    goalGradient.addColorStop(0.7, `rgba(0, 255, 100, ${0.3 * pulse})`);
+    goalGradient.addColorStop(1, 'rgba(0, 255, 100, 0)');
+    
+    ctx.fillStyle = goalGradient;
+    ctx.beginPath();
+    ctx.arc(goalX, goalY, goalRadius * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Goal marker ring
+    ctx.strokeStyle = `rgba(0, 255, 100, ${pulse})`;
+    ctx.lineWidth = 2 * invScale;
+    ctx.beginPath();
+    ctx.arc(goalX, goalY, goalRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Inner goal marker
+    ctx.fillStyle = `rgba(0, 255, 100, ${0.8 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(goalX, goalY, 4 * invScale, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // Draw boundaries
   ctx.strokeStyle = 'white';
   ctx.lineWidth = invScale;
   
-  const boundaryCount = boundaries.length;
-  for (let i = 0; i < boundaryCount; i++) {
+  for (let i = 0; i < boundaries.length; i++) {
     const boundary = boundaries[i];
     
+    // Skip transparent/sprite boundaries
+    if (boundary.isTransparent) continue;
+    
     if (boundary.isCurved) {
-      // Draw curved walls with arc approximation
       ctx.beginPath();
-      const segments = Math.max(24, Math.ceil(Math.abs(boundary.endAngle - boundary.startAngle) * 12));
+      const segments = 12;
       const angleDiff = boundary.endAngle - boundary.startAngle;
       
-      const firstAngle = boundary.startAngle;
-      let x = boundary.centerX + boundary.radius * fastCos(firstAngle) + offsetX;
-      let y = boundary.centerY + boundary.radius * fastSin(firstAngle) + offsetY;
+      let x = boundary.centerX + boundary.radius * fastCos(boundary.startAngle) + offsetX;
+      let y = boundary.centerY + boundary.radius * fastSin(boundary.startAngle) + offsetY;
       ctx.moveTo(x, y);
       
       for (let j = 1; j <= segments; j++) {
@@ -116,7 +254,6 @@ function drawMinimap(ctx, boundaries, user, enemies) {
       }
       ctx.stroke();
     } else {
-      // Draw straight walls
       ctx.beginPath();
       ctx.moveTo(boundary.a.x + offsetX, boundary.a.y + offsetY);
       ctx.lineTo(boundary.b.x + offsetX, boundary.b.y + offsetY);
@@ -124,63 +261,60 @@ function drawMinimap(ctx, boundaries, user, enemies) {
     }
   }
 
-  // Draw user position (centered)
-  ctx.fillStyle = 'yellow';
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, 2 * invScale, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Draw user FOV cone
-  const userViewDirRad = user.viewDirection * DEG_TO_RAD;
-  const userFovHalfRad = (user.camera.fov * 0.5) * DEG_TO_RAD;
-  const userFovLength = 200;
-
-  const userGradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, userFovLength);
-  userGradient.addColorStop(0, 'rgba(255,255,0,0.5)');
-  userGradient.addColorStop(1, 'rgba(255,255,0,0)');
-
-  ctx.fillStyle = userGradient;
+  // Draw player FOV cone (simple arc, no raycasting)
+  const playerDirRad = user.viewDirection * DEG_TO_RAD;
+  const playerFovHalfRad = (user.camera.fov * 0.5) * DEG_TO_RAD;
+  const playerFovLength = 150;
+  
+  // Gradient for player cone
+  const playerGradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, playerFovLength);
+  playerGradient.addColorStop(0, 'rgba(255, 255, 0, 0.4)');
+  playerGradient.addColorStop(1, 'rgba(255, 255, 0, 0)');
+  
+  ctx.fillStyle = playerGradient;
   ctx.beginPath();
   ctx.moveTo(centerX, centerY);
-  ctx.lineTo(
-    centerX + userFovLength * Math.cos(userViewDirRad - userFovHalfRad),
-    centerY + userFovLength * Math.sin(userViewDirRad - userFovHalfRad)
-  );
-  ctx.lineTo(
-    centerX + userFovLength * Math.cos(userViewDirRad + userFovHalfRad),
-    centerY + userFovLength * Math.sin(userViewDirRad + userFovHalfRad)
-  );
+  ctx.arc(centerX, centerY, playerFovLength, playerDirRad - playerFovHalfRad, playerDirRad + playerFovHalfRad);
   ctx.closePath();
   ctx.fill();
+  
+  // Draw player position dot
+  ctx.fillStyle = 'yellow';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 3 * invScale, 0, Math.PI * 2);
+  ctx.fill();
 
-  // Draw enemy FOV cones and positions
-  const enemyCount = enemies.length;
-  for (let i = 0; i < enemyCount; i++) {
+  // Draw enemy FOV cones - only for enemies within minimap radius
+  for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
-    const enemyViewDirRad = enemy.viewDirection * DEG_TO_RAD;
-    const enemyFovHalfRad = (enemy.fov * 0.5) * DEG_TO_RAD;
-    const enemyFovLength = enemy.visibilityDistance;
+    
+    // Distance from player (minimap center) to enemy
+    const dx = enemy.pos.x - user.pos.x;
+    const dy = enemy.pos.y - user.pos.y;
+    const distSq = dx * dx + dy * dy;
+    
+    // Skip if enemy is outside the culling radius
+    if (distSq > enemyCullRadiusSq) {
+      continue;
+    }
+    
+    // Get nearby boundaries for this enemy (optimization)
+    const nearbyBoundaries = getNearbyBoundaries(
+      boundaries, 
+      enemy.pos.x, 
+      enemy.pos.y, 
+      enemy.visibilityDistance
+    );
+    
+    // Draw FOV cone
+    drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries);
+    
+    // Enemy position dot
     const enemyCenterX = enemy.pos.x + offsetX;
     const enemyCenterY = enemy.pos.y + offsetY;
-
-    // FOV cone
-    ctx.fillStyle = 'rgba(255,0,0,0.2)';
-    ctx.beginPath();
-    ctx.moveTo(enemyCenterX, enemyCenterY);
-    ctx.arc(
-      enemyCenterX, 
-      enemyCenterY, 
-      enemyFovLength, 
-      enemyViewDirRad - enemyFovHalfRad, 
-      enemyViewDirRad + enemyFovHalfRad
-    );
-    ctx.closePath();
-    ctx.fill();
-
-    // Enemy position dot
     ctx.fillStyle = 'red';
     ctx.beginPath();
-    ctx.arc(enemyCenterX, enemyCenterY, 1.5 * invScale, 0, Math.PI * 2);
+    ctx.arc(enemyCenterX, enemyCenterY, 2 * invScale, 0, Math.PI * 2);
     ctx.fill();
   }
 

@@ -38,6 +38,30 @@ class GameMap {
     this.userViewDirection = 90;
     this.boundaries = [];
     this.enemies = [];
+    
+    // Goal zone (optional - for maze completion)
+    this.goalZone = null;
+  }
+  
+  /**
+   * Set the goal zone for the map
+   * @param {Object} zone - The goal zone with x, y, radius
+   */
+  setGoalZone(zone) {
+    this.goalZone = zone;
+  }
+  
+  /**
+   * Check if a position is within the goal zone
+   * @param {number} x - X coordinate to check
+   * @param {number} y - Y coordinate to check
+   * @returns {boolean} True if position is in goal zone
+   */
+  isInGoalZone(x, y) {
+    if (!this.goalZone) return false;
+    const dx = x - this.goalZone.x;
+    const dy = y - this.goalZone.y;
+    return (dx * dx + dy * dy) <= (this.goalZone.radius * this.goalZone.radius);
   }
 
   /**

@@ -167,7 +167,8 @@ function createBoundaryPath({ vertices, texture, connectEnds = false }) {
  * @param {number} params.radius - The radius of the arc
  * @param {number} params.startAngle - The starting angle in radians
  * @param {number} params.endAngle - The ending angle in radians
- * @param {HTMLImageElement} params.texture - The texture to apply to the curved wall
+ * @param {HTMLImageElement} [params.texture] - The texture to apply to the curved wall
+ * @param {string} [params.color] - Solid color for untextured curved wall
  * @param {Object} [params.options] - Additional options (uniqueID, isTransparent, etc.)
  * @returns {CurvedWall} A single curved wall object
  * 
@@ -182,7 +183,13 @@ function createBoundaryPath({ vertices, texture, connectEnds = false }) {
  *   texture: wallTexture
  * });
  */
-function createCurvedWall({ centerX, centerY, radius, startAngle, endAngle, texture, options = {} }) {
+function createCurvedWall({ centerX, centerY, radius, startAngle, endAngle, texture, color, options = {} }) {
+  // Merge color into options if provided
+  const mergedOptions = { ...options };
+  if (color) {
+    mergedOptions.color = color;
+  }
+  
   return new CurvedWall({
     centerX,
     centerY,
@@ -190,7 +197,7 @@ function createCurvedWall({ centerX, centerY, radius, startAngle, endAngle, text
     startAngle,
     endAngle,
     texture,
-    options
+    options: mergedOptions
   });
 }
 

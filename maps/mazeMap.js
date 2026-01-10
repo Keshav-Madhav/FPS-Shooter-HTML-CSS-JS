@@ -493,53 +493,475 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
 }
 
 /**
- * Places enemies in the maze
+ * Analyzes a cell to determine what type of corridor it is
+ * Returns: 'dead_end', 'straight_h', 'straight_v', 'corner', 'T', 'cross', 'room'
+ */
+function analyzeCellType(cell) {
+  const openDirs = [];
+  if (!cell.walls.north) openDirs.push('north');
+  if (!cell.walls.south) openDirs.push('south');
+  if (!cell.walls.east) openDirs.push('east');
+  if (!cell.walls.west) openDirs.push('west');
+  
+  const count = openDirs.length;
+  
+  if (count === 1) return { type: 'dead_end', openDirs };
+  if (count === 4) return { type: 'cross', openDirs };
+  if (count === 3) return { type: 'T', openDirs };
+  
+  if (count === 2) {
+    const hasNS = openDirs.includes('north') && openDirs.includes('south');
+    const hasEW = openDirs.includes('east') && openDirs.includes('west');
+    if (hasNS) return { type: 'straight_v', openDirs };
+    if (hasEW) return { type: 'straight_h', openDirs };
+    return { type: 'corner', openDirs };
+  }
+  
+  return { type: 'room', openDirs };
+}
+
+/**
+ * Gets the view direction for looking down a corridor
+ */
+function getViewDirectionForDir(dir) {
+  switch (dir) {
+    case 'north': return 270; // Looking up
+    case 'south': return 90;  // Looking down
+    case 'east': return 0;    // Looking right
+    case 'west': return 180;  // Looking left
+  }
+  return 0;
+}
+
+/**
+ * Gets opposite direction
+ */
+function getOppositeDir(dir) {
+  switch (dir) {
+    case 'north': return 'south';
+    case 'south': return 'north';
+    case 'east': return 'west';
+    case 'west': return 'east';
+  }
+  return null;
+}
+
+/**
+ * Gets delta for a direction
+ */
+function getDirDelta(dir) {
+  switch (dir) {
+    case 'north': return { dx: 0, dy: -1 };
+    case 'south': return { dx: 0, dy: 1 };
+    case 'east': return { dx: 1, dy: 0 };
+    case 'west': return { dx: -1, dy: 0 };
+  }
+  return { dx: 0, dy: 0 };
+}
+
+/**
+ * Finds a patrol path from a starting cell following corridors
+ * Returns an array of {x, y} world positions
+ */
+function findPatrolPath(grid, startX, startY, cellSize, maxLength = 6) {
+  const rows = grid.length;
+  const cols = grid[0].length;
+  const path = [];
+  const visited = new Set();
+  
+  let x = startX;
+  let y = startY;
+  let lastDir = null;
+  
+  // Add starting position
+  path.push({
+    x: x * cellSize + cellSize * 0.5,
+    y: y * cellSize + cellSize * 0.5
+  });
+  visited.add(`${x},${y}`);
+  
+  // Walk through corridors
+  for (let step = 0; step < maxLength; step++) {
+    const cell = getCell(grid, x, y);
+    if (!cell) break;
+    
+    const { openDirs } = analyzeCellType(cell);
+    
+    // Find valid next directions (not going back)
+    const oppositeDir = lastDir ? getOppositeDir(lastDir) : null;
+    const validDirs = openDirs.filter(d => d !== oppositeDir);
+    
+    if (validDirs.length === 0) break;
+    
+    // Prefer going straight, then pick random
+    let nextDir;
+    if (lastDir && validDirs.includes(lastDir)) {
+      nextDir = Math.random() > 0.3 ? lastDir : validDirs[Math.floor(Math.random() * validDirs.length)];
+    } else {
+      nextDir = validDirs[Math.floor(Math.random() * validDirs.length)];
+    }
+    
+    // Move to next cell
+    const delta = getDirDelta(nextDir);
+    let newX = x + delta.dx;
+    let newY = y + delta.dy;
+    
+    // Don't revisit cells
+    if (visited.has(`${newX},${newY}`)) {
+      // Try another direction
+      const otherDirs = validDirs.filter(d => {
+        const od = getDirDelta(d);
+        return !visited.has(`${x + od.dx},${y + od.dy}`);
+      });
+      if (otherDirs.length === 0) break;
+      nextDir = otherDirs[Math.floor(Math.random() * otherDirs.length)];
+      const newDelta = getDirDelta(nextDir);
+      newX = x + newDelta.dx;
+      newY = y + newDelta.dy;
+    }
+    
+    if (newX < 0 || newX >= cols || newY < 0 || newY >= rows) break;
+    
+    x = newX;
+    y = newY;
+    
+    visited.add(`${x},${y}`);
+    path.push({
+      x: x * cellSize + cellSize * 0.5,
+      y: y * cellSize + cellSize * 0.5
+    });
+    
+    lastDir = nextDir;
+  }
+  
+  return path;
+}
+
+/**
+ * Converts a path to move stops (relative movements between points)
+ */
+function pathToMoveStops(path) {
+  if (path.length < 2) return [];
+  
+  const moveStops = [];
+  
+  // Forward path
+  for (let i = 1; i < path.length; i++) {
+    moveStops.push({
+      x: path[i].x - path[i - 1].x,
+      y: path[i].y - path[i - 1].y
+    });
+  }
+  
+  // Return path (go back to start)
+  for (let i = path.length - 2; i >= 0; i--) {
+    moveStops.push({
+      x: path[i].x - path[i + 1].x,
+      y: path[i].y - path[i + 1].y
+    });
+  }
+  
+  return moveStops;
+}
+
+/**
+ * Generates rotation stops based on path direction changes
+ * Makes enemy look in direction of travel
+ */
+function pathToRotationStops(path, initialViewDir) {
+  if (path.length < 2) return [];
+  
+  const rotationStops = [];
+  let currentDir = initialViewDir;
+  
+  // Calculate directions for each segment
+  const directions = [];
+  for (let i = 1; i < path.length; i++) {
+    const dx = path[i].x - path[i - 1].x;
+    const dy = path[i].y - path[i - 1].y;
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    directions.push(angle);
+  }
+  
+  // Return path directions
+  for (let i = path.length - 2; i >= 0; i--) {
+    const dx = path[i].x - path[i + 1].x;
+    const dy = path[i].y - path[i + 1].y;
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    directions.push(angle);
+  }
+  
+  // Calculate rotation stops (relative rotations)
+  for (const targetDir of directions) {
+    let delta = targetDir - currentDir;
+    // Normalize to -180 to 180
+    while (delta > 180) delta -= 360;
+    while (delta < -180) delta += 360;
+    rotationStops.push(delta);
+    currentDir = targetDir;
+  }
+  
+  return rotationStops;
+}
+
+/**
+ * Places enemies in the maze with intelligent patrol routes
+ * Enemies patrol corridors and guard key intersections
  */
 function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn) {
   const enemies = [];
   const rows = grid.length;
   const cols = grid[0].length;
-  const minDistSq = (cellSize * 4) * (cellSize * 4);
+  const minDistSq = (cellSize * 3) * (cellSize * 3); // Minimum distance from player spawn
+  const minEnemyDistSq = (cellSize * 2.5) * (cellSize * 2.5); // Minimum distance between enemies
   
-  const positions = [];
+  // Analyze all cells and categorize them
+  const intersections = []; // T-junctions and crosses (strategic points)
+  const corridors = [];     // Long straight corridors (patrol routes)
+  const corners = [];       // Corner spots (ambush points)
+  const deadEnds = [];      // Dead ends (stationary guards)
+  
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
+      const cell = grid[y][x];
+      const analysis = analyzeCellType(cell);
       const worldX = x * cellSize + cellSize * 0.5;
       const worldY = y * cellSize + cellSize * 0.5;
       
+      // Check distance from player spawn
       const dx = worldX - playerSpawn.x;
       const dy = worldY - playerSpawn.y;
       const distSq = dx * dx + dy * dy;
+      if (distSq < minDistSq) continue;
       
-      if (distSq >= minDistSq) {
-        positions.push({ x: worldX, y: worldY });
+      const cellInfo = { x, y, worldX, worldY, ...analysis };
+      
+      switch (analysis.type) {
+        case 'cross':
+        case 'T':
+          intersections.push(cellInfo);
+          break;
+        case 'straight_h':
+        case 'straight_v':
+          corridors.push(cellInfo);
+          break;
+        case 'corner':
+          corners.push(cellInfo);
+          break;
+        case 'dead_end':
+          deadEnds.push(cellInfo);
+          break;
       }
     }
   }
   
-  for (let i = positions.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [positions[i], positions[j]] = [positions[j], positions[i]];
+  // Shuffle each category
+  const shuffle = (arr) => {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  };
+  shuffle(intersections);
+  shuffle(corridors);
+  shuffle(corners);
+  shuffle(deadEnds);
+  
+  const placedPositions = [];
+  
+  /**
+   * Checks if a position is valid (not too close to other enemies)
+   */
+  function isValidPosition(worldX, worldY) {
+    for (const pos of placedPositions) {
+      const dx = worldX - pos.x;
+      const dy = worldY - pos.y;
+      if (dx * dx + dy * dy < minEnemyDistSq) return false;
+    }
+    return true;
   }
   
-  const numEnemies = Math.min(count, positions.length);
-  for (let i = 0; i < numEnemies; i++) {
-    const pos = positions[i];
+  /**
+   * Creates an enemy at the specified cell with patrol behavior
+   */
+  function createEnemy(cellInfo, enemyType) {
+    if (!isValidPosition(cellInfo.worldX, cellInfo.worldY)) return null;
     
-    enemies.push(new EnemyClass({
-      x: pos.x,
-      y: pos.y,
-      viewDirection: Math.random() * 360,
-      fov: 70,
+    placedPositions.push({ x: cellInfo.worldX, y: cellInfo.worldY });
+    
+    const id = 1000 + enemies.length;
+    let moveStops = [];
+    let rotationStops = [];
+    let moveTime = 2 + Math.random() * 1.5;
+    let rotationTime = 0.8 + Math.random() * 0.5;
+    let initialViewDir;
+    let visibilityDistance = cellSize * 3.5;
+    let fov = 75;
+    
+    switch (enemyType) {
+      case 'patrol': {
+        // Patrolling enemy - walks along corridors
+        const path = findPatrolPath(grid, cellInfo.x, cellInfo.y, cellSize, 3 + Math.floor(Math.random() * 4));
+        if (path.length >= 2) {
+          moveStops = pathToMoveStops(path);
+          const firstDx = path[1].x - path[0].x;
+          const firstDy = path[1].y - path[0].y;
+          initialViewDir = Math.atan2(firstDy, firstDx) * 180 / Math.PI;
+          rotationStops = pathToRotationStops(path, initialViewDir);
+          moveTime = 1.5 + Math.random() * 1;
+          rotationTime = 0.5;
+        } else {
+          // Fallback to looking around
+          initialViewDir = getViewDirectionForDir(cellInfo.openDirs[0]);
+          rotationStops = [90, 90, 90, 90];
+          rotationTime = 2;
+        }
+        visibilityDistance = cellSize * 4;
+        break;
+      }
+      
+      case 'guard': {
+        // Stationary guard at intersection - looks in multiple directions
+        initialViewDir = getViewDirectionForDir(cellInfo.openDirs[0]);
+        
+        // Create a looking pattern based on open directions
+        const lookAngles = cellInfo.openDirs.map(d => getViewDirectionForDir(d));
+        rotationStops = [];
+        let currentAngle = initialViewDir;
+        for (const targetAngle of lookAngles) {
+          let delta = targetAngle - currentAngle;
+          while (delta > 180) delta -= 360;
+          while (delta < -180) delta += 360;
+          rotationStops.push(delta);
+          currentAngle = targetAngle;
+        }
+        // Return to initial
+        let returnDelta = initialViewDir - currentAngle;
+        while (returnDelta > 180) returnDelta -= 360;
+        while (returnDelta < -180) returnDelta += 360;
+        if (Math.abs(returnDelta) > 1) rotationStops.push(returnDelta);
+        
+        rotationTime = 1.5 + Math.random();
+        fov = 85; // Wider FOV for guards
+        visibilityDistance = cellSize * 5;
+        break;
+      }
+      
+      case 'ambush': {
+        // Corner ambusher - faces into corridor, occasionally peeks
+        const lookDirs = cellInfo.openDirs;
+        initialViewDir = getViewDirectionForDir(lookDirs[0]);
+        const secondDir = getViewDirectionForDir(lookDirs[1] || lookDirs[0]);
+        
+        let delta = secondDir - initialViewDir;
+        while (delta > 180) delta -= 360;
+        while (delta < -180) delta += 360;
+        
+        rotationStops = [delta, -delta]; // Look one way, then the other
+        rotationTime = 2 + Math.random() * 1.5;
+        fov = 80;
+        break;
+      }
+      
+      case 'sentry': {
+        // Dead-end sentry - faces the only exit, watches carefully
+        const exitDir = cellInfo.openDirs[0];
+        initialViewDir = getViewDirectionForDir(exitDir);
+        
+        // Small head movements
+        rotationStops = [15, -30, 15]; // Slight left-right scanning
+        rotationTime = 2.5 + Math.random();
+        fov = 70;
+        visibilityDistance = cellSize * 6; // Long sight line
+        break;
+      }
+    }
+    
+    return new EnemyClass({
+      x: cellInfo.worldX,
+      y: cellInfo.worldY,
+      viewDirection: initialViewDir,
+      fov,
       rayCount: 3,
-      visibilityDistance: cellSize * 3,
+      visibilityDistance,
       texture,
-      id: 1000 + i,
-      rotationStops: Math.random() > 0.6 ? [90, 90, 90, 90] : [],
-      rotationTime: 1.5 + Math.random() * 2,
+      id,
+      moveStops: moveStops.length > 0 ? moveStops : [],
+      moveTime,
+      repeatMovement: moveStops.length > 0,
+      rotationStops,
+      rotationTime,
       repeatRotation: true
-    }));
+    });
   }
+  
+  // Distribute enemy types strategically
+  // Priority: patrol corridors > guard intersections > ambush corners > sentry dead-ends
+  
+  let enemiesPlaced = 0;
+  
+  // Place patrolling enemies in corridors (35% of enemies)
+  const numPatrols = Math.ceil(count * 0.35);
+  for (let i = 0; i < numPatrols && enemiesPlaced < count; i++) {
+    const cell = corridors[i % (corridors.length || 1)];
+    if (!cell) continue;
+    const enemy = createEnemy(cell, 'patrol');
+    if (enemy) {
+      enemies.push(enemy);
+      enemiesPlaced++;
+    }
+  }
+  
+  // Place guards at intersections (25% of enemies)
+  const numGuards = Math.ceil(count * 0.25);
+  for (let i = 0; i < numGuards && enemiesPlaced < count; i++) {
+    const cell = intersections[i % (intersections.length || 1)];
+    if (!cell) continue;
+    const enemy = createEnemy(cell, 'guard');
+    if (enemy) {
+      enemies.push(enemy);
+      enemiesPlaced++;
+    }
+  }
+  
+  // Place ambushers at corners (25% of enemies)
+  const numAmbush = Math.ceil(count * 0.25);
+  for (let i = 0; i < numAmbush && enemiesPlaced < count; i++) {
+    const cell = corners[i % (corners.length || 1)];
+    if (!cell) continue;
+    const enemy = createEnemy(cell, 'ambush');
+    if (enemy) {
+      enemies.push(enemy);
+      enemiesPlaced++;
+    }
+  }
+  
+  // Place sentries at dead-ends (15% of enemies)
+  const numSentries = Math.ceil(count * 0.15);
+  for (let i = 0; i < numSentries && enemiesPlaced < count; i++) {
+    const cell = deadEnds[i % (deadEnds.length || 1)];
+    if (!cell) continue;
+    const enemy = createEnemy(cell, 'sentry');
+    if (enemy) {
+      enemies.push(enemy);
+      enemiesPlaced++;
+    }
+  }
+  
+  // Fill remaining spots with random placements
+  const allCells = [...corridors, ...intersections, ...corners, ...deadEnds];
+  shuffle(allCells);
+  for (let i = 0; enemiesPlaced < count && i < allCells.length; i++) {
+    const cell = allCells[i];
+    const types = ['patrol', 'guard', 'ambush', 'sentry'];
+    const enemy = createEnemy(cell, types[Math.floor(Math.random() * types.length)]);
+    if (enemy) {
+      enemies.push(enemy);
+      enemiesPlaced++;
+    }
+  }
+  
+  console.log(`Placed ${enemies.length} enemies: patrols, guards, ambushers, sentries`);
   
   return enemies;
 }

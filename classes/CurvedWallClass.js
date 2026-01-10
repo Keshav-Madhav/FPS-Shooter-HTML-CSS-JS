@@ -32,6 +32,7 @@ class CurvedWall {
     this.startAngle = startAngle;
     this.endAngle = endAngle;
     this.texture = texture;
+    this.color = options.color || null; // Solid color for untextured curved walls
     this.uniqueID = options.uniqueID || null;
     this.isTransparent = options.isTransparent || false;
     this.isCurved = true; // Flag to identify curved walls

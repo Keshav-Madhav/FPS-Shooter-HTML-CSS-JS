@@ -5,6 +5,7 @@ import Boundaries from "../classes/BoundariesClass.js";
  * @property {number} distance - The perpendicular distance from the camera to the boundary.
  * @property {number} textureX - The normalized x-coordinate on the boundary's texture (0 to 1).
  * @property {HTMLImageElement|null} texture - The texture image of the intersected boundary.
+ * @property {string|null} color - The solid color of the boundary (used when texture is null).
  * @property {Boundaries|null} boundary - The intersected boundary object.
  */
 
@@ -13,6 +14,7 @@ import Boundaries from "../classes/BoundariesClass.js";
  * @property {number} distance - The perpendicular distance from the camera to the closest boundary.
  * @property {number} textureX - The normalized x-coordinate on the boundary's texture (0 to 1).
  * @property {HTMLImageElement|null} texture - The texture image of the intersected boundary.
+ * @property {string|null} color - The solid color of the boundary (used when texture is null).
  * @property {Boundaries|null} boundary - The intersected boundary object.
  * @property {RayHit[]} [transparentHits] - Array of transparent boundary hits.
  */
@@ -70,23 +72,55 @@ function calculateBrightness(distance) {
 }
 
 /**
- * Renders a single wall slice with texture
+ * Renders a single wall slice with texture or solid color
  * Optimized to minimize state changes
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {number} x - X position on screen
  * @param {number} y - Y position on screen
  * @param {number} width - Slice width
  * @param {number} height - Wall height
- * @param {HTMLImageElement} texture - Texture image
+ * @param {HTMLImageElement|null} texture - Texture image (or null for solid color)
+ * @param {string|null} color - Solid color (used when texture is null)
  * @param {number} textureX - Texture X coordinate (0-1)
  * @param {number} brightness - Brightness value (0-1)
+ * @param {boolean} isTransparent - Whether this wall has transparency
  */
-function renderWallSlice(ctx, x, y, width, height, texture, textureX, brightness) {
+function renderWallSlice(ctx, x, y, width, height, texture, color, textureX, brightness, isTransparent = false) {
+  // Handle solid color walls
   if (!texture || !texture.complete) {
-    // Fallback solid color - avoid string concatenation
-    const gray = (128 * brightness) | 0;
-    ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
-    ctx.fillRect(x, y, width, height);
+    if (color) {
+      // Check if color has alpha (rgba format)
+      if (color.startsWith('rgba') || color.startsWith('hsla')) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, width + 0.5, height);
+        // Apply brightness to transparent colors
+        if (brightness < 0.99 && !isTransparent) {
+          ctx.fillStyle = `rgba(0,0,0,${(1 - brightness) * 0.7})`;
+          ctx.fillRect(x, y, width + 0.5, height);
+        }
+      } else if (color.startsWith('hsl(')) {
+        // HSL color - apply brightness by modifying lightness
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, width + 0.5, height);
+        if (brightness < 0.99) {
+          ctx.fillStyle = `rgba(0,0,0,${1 - brightness})`;
+          ctx.fillRect(x, y, width + 0.5, height);
+        }
+      } else {
+        // Solid color - apply brightness
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, width + 0.5, height);
+        if (brightness < 0.99) {
+          ctx.fillStyle = `rgba(0,0,0,${1 - brightness})`;
+          ctx.fillRect(x, y, width + 0.5, height);
+        }
+      }
+    } else {
+      // Fallback gray color
+      const gray = (128 * brightness) | 0;
+      ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
+      ctx.fillRect(x, y, width + 0.5, height);
+    }
     return;
   }
   
@@ -166,7 +200,7 @@ function render3D(scene) {
   // Second pass: Render opaque walls
   // Process in order (no sorting needed for opaque walls)
   for (let i = 0; i < sceneLength; i++) {
-    const { distance, textureX, texture } = scene[i];
+    const { distance, textureX, texture, color, boundary } = scene[i];
     
     // Skip rays that hit nothing
     if (distance === Infinity) continue;
@@ -198,13 +232,17 @@ function render3D(scene) {
     const y = cachedHalfHeight - wallHeight * 0.5;
     const x = i * sliceWidth;
     
+    const isTransparent = boundary && boundary.isTransparent;
+    
     renderWallSlice(
       main_ctx,
       x, y,
       sliceWidth, wallHeight,
       texture,
+      color,
       textureX,
-      averageBrightness
+      averageBrightness,
+      isTransparent
     );
   }
   

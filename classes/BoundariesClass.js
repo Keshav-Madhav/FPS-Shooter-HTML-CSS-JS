@@ -31,7 +31,8 @@ class Boundaries {
     this.originalA = { x: x1, y: y1 }; // Original point A for rotation
     this.originalB = { x: x2, y: y2 }; // Original point B for rotation
     this.angle = 0; // Rotation angle
-    this.texture = texture; // Boundary texture
+    this.texture = texture; // Boundary texture (can be null for solid color)
+    this.color = options.color || null; // Solid color (used when texture is null)
     this.uniqueID = options.uniqueID || null; // Unique identifier
     this.isTransparent = options.isTransparent || false; // For sprites with transparency
     this.isSprite = options.isSprite || false; // Billboard sprites

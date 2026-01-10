@@ -7,6 +7,7 @@ import { DEG_TO_RAD } from "../utils/mathLUT.js";
  * @property {number} distance - The perpendicular distance from the camera to the boundary.
  * @property {number} textureX - The normalized x-coordinate on the boundary's texture (0 to 1).
  * @property {HTMLImageElement|null} texture - The texture image of the intersected boundary.
+ * @property {string|null} color - Solid color for untextured walls.
  * @property {Boundaries|null} boundary - The intersected boundary object.
  * @property {{x: number, y: number}} point - The intersection point.
  */
@@ -16,6 +17,7 @@ import { DEG_TO_RAD } from "../utils/mathLUT.js";
  * @property {number} distance - The perpendicular distance from the camera to the closest boundary.
  * @property {number} textureX - The normalized x-coordinate on the boundary's texture (0 to 1).
  * @property {HTMLImageElement|null} texture - The texture image of the intersected boundary.
+ * @property {string|null} color - Solid color for untextured walls.
  * @property {Boundaries|null} boundary - The intersected boundary object.
  * @property {RayHit[]} [transparentHits] - Array of transparent boundary hits behind this one.
  */
@@ -74,6 +76,7 @@ class CameraClass {
         distance: Infinity,
         textureX: 0,
         texture: null,
+        color: null,
         boundary: null,
         transparentHits: []
       };
@@ -200,6 +203,7 @@ class CameraClass {
       let closestHit = null;
       let textureX = 0;
       let texture = null;
+      let color = null;
       let hitBoundary = null;
       
       // Check opaque boundaries - find closest
@@ -227,6 +231,7 @@ class CameraClass {
             closestDist = correctedDist;
             closestHit = point;
             texture = hitBound.texture;
+            color = hitBound.color || null;
             hitBoundary = hitBound;
             textureX = this._calculateTextureX(hitBound, point, angle);
           }
@@ -261,6 +266,7 @@ class CameraClass {
                 distance: correctedDist,
                 textureX: this._calculateTextureX(hitBound, point, angle),
                 texture: hitBound.texture,
+                color: hitBound.color || null,
                 boundary: hitBound,
                 point
               });
@@ -279,6 +285,7 @@ class CameraClass {
       sceneItem.distance = closestDist;
       sceneItem.textureX = textureX;
       sceneItem.texture = texture;
+      sceneItem.color = color;
       sceneItem.boundary = hitBoundary;
       sceneItem.transparentHits = transparentHits;
     }
