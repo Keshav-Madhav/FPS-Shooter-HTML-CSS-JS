@@ -6,6 +6,7 @@ import EnemyClass from "./classes/EnemyClass.js";
 import { createTestMap } from "./maps/testMap.js";
 import { createMazeMap } from "./maps/mazeMap.js";
 import { createShowcaseMap } from "./maps/showcaseMap.js";
+import { createEnemyTestMap } from "./maps/enemyTestMap.js";
 import { getDeltaTime } from "./utils/deltaTime.js";
 import { drawFPS } from "./utils/fpsDisplay.js";
 import { render3D } from "./utils/render3DFunction.js";
@@ -357,6 +358,9 @@ function setUpGame() {
   
   // Add showcase map with all wall features
   gameMaps.push(createShowcaseMap(textures, 'Showcase Map'));
+  
+  // Add enemy testing map
+  gameMaps.push(createEnemyTestMap(textures, 'Enemy Test'));
 
   // Create user
   player = new Player({ x: 0, y: 0 });
@@ -415,7 +419,7 @@ function draw() {
     main_ctx.textBaseline = 'top';
     main_ctx.fillText(`Map: ${ActiveMap.name}`, 10, 10);
     main_ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    main_ctx.fillText('Press M or Tab to change map | R to reset | 1-3 quick select', 10, 10 + main_canvas.height * 0.025);
+    main_ctx.fillText('Press M or Tab to change map | R to reset | 1-4 quick select', 10, 10 + main_canvas.height * 0.025);
   }
   
   // Draw detection alert at bottom center
