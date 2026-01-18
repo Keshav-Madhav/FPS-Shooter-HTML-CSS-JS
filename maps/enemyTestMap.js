@@ -24,7 +24,20 @@ function createEnemyTestMap(textures, name) {
   
   const wallTexture = textures.getTexture("wall");
   const edgeTexture = textures.getTexture("edge");
-  const enemyTexture = textures.getTexture("cacoDemon");
+  
+  // 8-directional individual sprites (new system)
+  // Index: 0=front, 1=front-left, 2=left, 3=back-left, 4=back
+  // Right-side views mirror left-side sprites
+  const directionalSprites = [
+    textures.getTexture("enemySprite0"),  // Front
+    textures.getTexture("enemySprite1"),  // Front-left
+    textures.getTexture("enemySprite2"),  // Left
+    textures.getTexture("enemySprite3"),  // Back-left
+    textures.getTexture("enemySprite4")   // Back
+  ];
+  
+  // Use the first sprite as the default texture for the boundary
+  const enemyTexture = directionalSprites[0];
   
   let enemyId = 100;
   
@@ -98,6 +111,7 @@ function createEnemyTestMap(textures, name) {
       rayCount: 3,
       visibilityDistance: 250,
       texture: enemyTexture,
+      directionalSprites: directionalSprites,
       id: enemyId++
     }));
   }
@@ -148,6 +162,7 @@ function createEnemyTestMap(textures, name) {
       rayCount: 3,
       visibilityDistance: rangeValues[i],
       texture: enemyTexture,
+      directionalSprites: directionalSprites,
       id: enemyId++
     }));
   }
@@ -194,6 +209,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 3,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -209,6 +225,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 0.5,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -224,6 +241,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 2,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -239,6 +257,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 1.5,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -288,6 +307,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 0.3,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -309,6 +329,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 0.3,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -332,6 +353,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 0.3,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -386,6 +408,7 @@ function createEnemyTestMap(textures, name) {
     rayCount: 3,
     visibilityDistance: 350,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -408,6 +431,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 2,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -433,6 +457,7 @@ function createEnemyTestMap(textures, name) {
     rayCount: 3,
     visibilityDistance: 280,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -464,6 +489,7 @@ function createEnemyTestMap(textures, name) {
     moveTime: 2,
     repeatMovement: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -504,6 +530,7 @@ function createEnemyTestMap(textures, name) {
     rayCount: 3,
     visibilityDistance: 100, // Short range to balance
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -519,6 +546,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 4, // Slow sweep
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -534,6 +562,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 0.12,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -549,6 +578,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 5,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   
@@ -572,6 +602,7 @@ function createEnemyTestMap(textures, name) {
     rotationTime: 0.15,
     repeatRotation: true,
     texture: enemyTexture,
+    directionalSprites: directionalSprites,
     id: enemyId++
   }));
   

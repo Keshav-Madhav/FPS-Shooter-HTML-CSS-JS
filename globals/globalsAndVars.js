@@ -16,7 +16,8 @@ var miniMapSettings = {
   x: 110,
   y: 110,
   scale: 0.25,
-  radius: 350
+  radius: 350,
+  rotateWithPlayer: true  // When true, map rotates so player always faces north (up)
 };
 
 // Mouse sensitivity for rotation

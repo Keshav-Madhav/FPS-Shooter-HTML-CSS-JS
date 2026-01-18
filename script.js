@@ -337,7 +337,11 @@ function setUpGame() {
   // Add textures
   textures.addTexture("wall", './images/wall_texture_1.jpg');
   textures.addTexture("edge", './images/wall_texture_2.png');
-  textures.addTexture("cacoDemon", './images/caco-demon.png');
+  textures.addTexture("enemySprite0", './images/00.png');  // Front
+  textures.addTexture("enemySprite1", './images/10.png');  // Front-left
+  textures.addTexture("enemySprite2", './images/20.png');  // Left
+  textures.addTexture("enemySprite3", './images/30.png');  // Back-left
+  textures.addTexture("enemySprite4", './images/40.png');  // Back
 
   // Add maps
   gameMaps.push(createTestMap(textures, 'Test Map'));
@@ -403,7 +407,16 @@ function draw() {
     const enemyBoundary = boundaries.find(b => b.uniqueID === enemy.id);
     if (enemyBoundary) {
       enemyBoundary.updatePosition(enemy.pos.x, enemy.pos.y);
-      enemyBoundary.rotateBoundary(enemy.viewDirection);
+      
+      // Billboard: rotate boundary to always face the player
+      // The original boundary is vertical (90°). To make it perpendicular to the 
+      // line of sight (angleToPlayer), we rotate it by angleToPlayer so the
+      // boundary runs perpendicular to the player's view direction.
+      const angleToPlayer = Math.atan2(player.pos.y - enemy.pos.y, player.pos.x - enemy.pos.x) * 180 / Math.PI;
+      enemyBoundary.rotateBoundary(angleToPlayer);
+      
+      // Set the enemy's actual facing direction for 8-directional sprite frame calculation
+      enemyBoundary.setFacingDirection(enemy.viewDirection);
     }
   });
 

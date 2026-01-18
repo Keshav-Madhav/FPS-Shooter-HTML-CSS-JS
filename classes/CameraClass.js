@@ -268,7 +268,13 @@ class CameraClass {
             texture = hitBound.texture;
             color = hitBound.color || null;
             hitBoundary = hitBound;
-            textureX = this._calculateTextureX(hitBound, point, angle);
+            const texResult = this._calculateTextureX(hitBound, point, angle);
+            // Handle directional sprites that return an object
+            if (typeof texResult === 'object' && texResult.isDirectional) {
+              textureX = texResult.textureX;
+            } else {
+              textureX = texResult;
+            }
           }
         }
       }
@@ -297,13 +303,29 @@ class CameraClass {
             
             // Only include if closer than the closest opaque wall
             if (correctedDist < closestDist) {
+              const texResult = this._calculateTextureX(hitBound, point, angle);
+              // Handle directional sprites that return an object
+              let hitTextureX;
+              let spriteTexture = null;
+              let mirrored = false;
+              
+              if (typeof texResult === 'object' && texResult.isDirectional) {
+                hitTextureX = texResult.textureX;
+                spriteTexture = texResult.spriteTexture || null;
+                mirrored = texResult.mirrored || false;
+              } else {
+                hitTextureX = texResult;
+              }
+              
               transparentHits.push({
                 distance: correctedDist,
-                textureX: this._calculateTextureX(hitBound, point, angle),
+                textureX: hitTextureX,
                 texture: hitBound.texture,
                 color: hitBound.color || null,
                 boundary: hitBound,
-                point
+                point,
+                spriteTexture,
+                mirrored
               });
             }
           }
@@ -331,13 +353,89 @@ class CameraClass {
   /**
    * Calculates the texture X coordinate for a hit point on a boundary
    * Handles both straight walls and curved walls with automatic tiling
+   * Also handles 8-directional sprites with frame selection and mirroring
    * @param {Boundaries|CurvedWall} boundary - The hit boundary
    * @param {{x: number, y: number}} point - The intersection point
    * @param {number} [angle] - For curved walls, the angle at intersection
-   * @returns {number} The texture X coordinate (0 to 1)
+   * @returns {number|{textureX: number, mirrored: boolean, spriteTexture: HTMLImageElement|null, isDirectional: boolean}} The texture X coordinate (0 to 1) or object with directional info
    * @private
    */
   _calculateTextureX(boundary, point, angle) {
+    // 8-directional sprites with individual images (new system)
+    if (boundary.directionalSprites && boundary.isSprite) {
+      // Use vector projection to get the correct position along the boundary
+      const abx = boundary.b.x - boundary.a.x;
+      const aby = boundary.b.y - boundary.a.y;
+      const apx = point.x - boundary.a.x;
+      const apy = point.y - boundary.a.y;
+      
+      const dotAB = abx * abx + aby * aby;
+      const dotAP_AB = apx * abx + apy * aby;
+      let localX = dotAP_AB / dotAB;
+      
+      if (localX < 0) localX = 0;
+      if (localX > 1) localX = 1;
+      
+      // Get directional frame info based on player position
+      const frameInfo = boundary.getDirectionalSpriteFrame(this.pos.x, this.pos.y);
+      
+      // Return object with individual sprite texture and mirroring info
+      return { 
+        textureX: localX, 
+        mirrored: frameInfo.mirrored, 
+        spriteTexture: frameInfo.spriteTexture,
+        isDirectional: true 
+      };
+    }
+    
+    // 8-directional sprites with sprite sheet (legacy system)
+    if (boundary.spriteSheet && boundary.isSprite) {
+      // Use vector projection to get the correct position along the boundary
+      // This handles rotated boundaries correctly
+      const abx = boundary.b.x - boundary.a.x;
+      const aby = boundary.b.y - boundary.a.y;
+      const apx = point.x - boundary.a.x;
+      const apy = point.y - boundary.a.y;
+      
+      // Project point onto the line from A to B
+      // t = (AP · AB) / (AB · AB) where t is the parameter along the line
+      const dotAB = abx * abx + aby * aby;
+      const dotAP_AB = apx * abx + apy * aby;
+      let localX = dotAP_AB / dotAB;
+      
+      // Clamp to 0-1 range
+      if (localX < 0) localX = 0;
+      if (localX > 1) localX = 1;
+      
+      // Get directional frame info based on player position
+      const frameInfo = boundary.getDirectionalSpriteFrame(this.pos.x, this.pos.y);
+      
+      // If mirrored, flip the local X coordinate
+      if (frameInfo.mirrored) {
+        localX = 1 - localX;
+      }
+      
+      // Calculate texture coordinates for the selected frame
+      // Each frame occupies 1/columns of the texture width
+      const columns = boundary.spriteSheet.columns;
+      const frameIndex = frameInfo.frameIndex;
+      
+      // Calculate pixel positions for this frame
+      // Frame starts at (frameIndex / columns) and ends at ((frameIndex + 1) / columns)
+      const frameStart = frameIndex / columns;
+      const frameEnd = (frameIndex + 1) / columns;
+      
+      // Map localX (0-1) to the frame range with small inset to avoid edge bleeding
+      const inset = boundary.spriteSheet.frameInset || 0.02;
+      const insetStart = frameStart + inset / columns;
+      const insetEnd = frameEnd - inset / columns;
+      
+      const textureX = insetStart + localX * (insetEnd - insetStart);
+      
+      // Return object with mirroring info for the renderer
+      return { textureX, mirrored: frameInfo.mirrored, spriteTexture: null, isDirectional: true };
+    }
+    
     // Sprites/transparent textures always stretch (no tiling)
     if (boundary.isSprite || boundary.isTransparent) {
       if (boundary.isCurved) {

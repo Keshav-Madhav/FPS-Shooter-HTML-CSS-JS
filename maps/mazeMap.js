@@ -708,7 +708,7 @@ function pathToRotationStops(path, initialViewDir) {
  * Places enemies in the maze with intelligent patrol routes
  * Enemies patrol corridors and guard key intersections
  */
-function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn) {
+function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn, directionalSprites = null) {
   const enemies = [];
   const rows = grid.length;
   const cols = grid[0].length;
@@ -885,6 +885,7 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
       rayCount: 3,
       visibilityDistance,
       texture,
+      directionalSprites: directionalSprites,
       id,
       moveStops: moveStops.length > 0 ? moveStops : [],
       moveTime,
@@ -998,7 +999,20 @@ function createMazeMap(textures, name, options = {}) {
   
   const wallTexture = textures.getTexture("wall");
   const curveTexture = wallTexture;
-  const enemyTexture = textures.getTexture("cacoDemon");
+  
+  // 8-directional individual sprites (new system)
+  // Index: 0=front, 1=front-left, 2=left, 3=back-left, 4=back
+  // Right-side views mirror left-side sprites
+  const directionalSprites = [
+    textures.getTexture("enemySprite0"),  // Front
+    textures.getTexture("enemySprite1"),  // Front-left
+    textures.getTexture("enemySprite2"),  // Left
+    textures.getTexture("enemySprite3"),  // Back-left
+    textures.getTexture("enemySprite4")   // Back
+  ];
+  
+  // Use the first sprite as the default texture for the boundary
+  const enemyTexture = directionalSprites[0];
   
   // Create and generate base maze
   const grid = createGrid(cols, rows);
@@ -1020,7 +1034,7 @@ function createMazeMap(textures, name, options = {}) {
   };
   
   // Place enemies
-  const enemies = placeEnemies(grid, cellSize, wallThickness, enemyTexture, enemyCount, spawnLocation);
+  const enemies = placeEnemies(grid, cellSize, wallThickness, enemyTexture, enemyCount, spawnLocation, directionalSprites);
   
   // Create map
   const mapWidth = cols * cellSize;

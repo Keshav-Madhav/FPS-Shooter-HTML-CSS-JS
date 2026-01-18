@@ -150,6 +150,7 @@ function renderWallSlice(ctx, x, y, width, height, texture, color, textureX, bri
 
 /**
  * Renders a transparent/translucent slice (sprites or colored walls)
+ * Supports 8-directional sprites with individual images or sprite sheet
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {number} x - X position on screen
  * @param {number} y - Y position on screen
@@ -157,10 +158,13 @@ function renderWallSlice(ctx, x, y, width, height, texture, color, textureX, bri
  * @param {number} height - Wall height
  * @param {HTMLImageElement|null} texture - Texture image
  * @param {string|null} color - Solid color with alpha
- * @param {number} textureX - Texture X coordinate (0-1)
+ * @param {number|Object} textureX - Texture X coordinate (0-1) or object with directional info
  * @param {number} brightness - Brightness value (0-1)
+ * @param {Object|null} boundary - The boundary object (for sprite info)
+ * @param {HTMLImageElement|null} spriteTexture - Individual sprite texture (for directional sprites)
+ * @param {boolean} mirrored - Whether to mirror the sprite horizontally
  */
-function renderTranslucentSlice(ctx, x, y, width, height, texture, color, textureX, brightness) {
+function renderTranslucentSlice(ctx, x, y, width, height, texture, color, textureX, brightness, boundary = null, spriteTexture = null, mirrored = false) {
   // Handle colored translucent walls
   if (!texture || !texture.complete) {
     if (color) {
@@ -175,18 +179,87 @@ function renderTranslucentSlice(ctx, x, y, width, height, texture, color, textur
     return;
   }
   
-  // Handle textured sprites
+  // Handle individual directional sprites (new system)
+  if (spriteTexture && spriteTexture.complete) {
+    const spriteWidth = spriteTexture.width;
+    const spriteHeight = spriteTexture.height;
+    
+    // Scale factor to adjust sprite size (lower = smaller sprites)
+    // Adjust this value to change how tall sprites appear
+    const SPRITE_SCALE = 0.5;
+    
+    // Calculate aspect ratio to maintain proportions
+    const aspectRatio = spriteHeight / spriteWidth;
+    const adjustedHeight = height * aspectRatio * SPRITE_SCALE;
+    
+    // Center the sprite vertically
+    const adjustedY = y + (height - adjustedHeight) / 2;
+    
+    // Calculate source X position
+    // For mirrored sprites, we need to flip the textureX coordinate
+    let srcX;
+    if (mirrored) {
+      // Flip the texture coordinate for mirroring
+      srcX = ((1 - textureX) * spriteWidth) | 0;
+    } else {
+      srcX = (textureX * spriteWidth) | 0;
+    }
+    
+    // Clamp to valid range
+    if (srcX < 0) srcX = 0;
+    if (srcX >= spriteWidth) srcX = spriteWidth - 1;
+    
+    ctx.drawImage(
+      spriteTexture,
+      srcX, 0,
+      1, spriteHeight,
+      x, adjustedY,
+      width + 0.5, adjustedHeight
+    );
+    return;
+  }
+  
+  // Handle textured sprites (legacy sprite sheet)
   const texWidth = texture.width;
   const texHeight = texture.height;
-  const srcX = ((textureX * texWidth) | 0) % texWidth;
   
-  ctx.drawImage(
-    texture,
-    srcX, 0,
-    1, texHeight,
-    x, y,
-    width + 0.5, height
-  );
+  // Check for 8-directional sprite sheet (legacy)
+  if (boundary && boundary.spriteSheet) {
+    const spriteColumns = boundary.spriteSheet.columns || 8;
+    const spriteRows = boundary.spriteSheet.rows || 6;
+    
+    // Calculate exact pixel dimensions for each sprite cell
+    const spriteWidth = texWidth / spriteColumns;
+    const spriteRowHeight = texHeight / spriteRows;
+    
+    // textureX is already calculated to be in the correct frame range (0-1 total texture)
+    // Convert to pixel position
+    let srcX = ((textureX * texWidth) | 0);
+    
+    // Clamp to valid range
+    if (srcX < 0) srcX = 0;
+    if (srcX >= texWidth) srcX = texWidth - 1;
+    
+    // Only draw from the first row (directional sprites)
+    ctx.drawImage(
+      texture,
+      srcX, 0,                    // Source X, Y (first row)
+      1, spriteRowHeight,         // Source dimensions (1 pixel wide, first row height)
+      x, y,                       // Destination position
+      width + 0.5, height         // Destination dimensions
+    );
+  } else {
+    // Regular sprite - use full texture height
+    const srcX = ((textureX * texWidth) | 0) % texWidth;
+    
+    ctx.drawImage(
+      texture,
+      srcX, 0,
+      1, texHeight,
+      x, y,
+      width + 0.5, height
+    );
+  }
 }
 
 /**
@@ -287,7 +360,9 @@ function render3D(scene, eyeHeight = 0) {
             textureX: hit.textureX,
             texture: hit.texture,
             color: hit.color,
-            boundary: hit.boundary
+            boundary: hit.boundary,
+            spriteTexture: hit.spriteTexture || null,
+            mirrored: hit.mirrored || false
           });
         }
       }
@@ -302,7 +377,7 @@ function render3D(scene, eyeHeight = 0) {
   // Render transparent/translucent slices
   for (let i = 0; i < transparentSlices.length; i++) {
     const slice = transparentSlices[i];
-    const { rayIndex, distance, textureX, texture, color } = slice;
+    const { rayIndex, distance, textureX, texture, color, boundary, spriteTexture, mirrored } = slice;
     
     const wallHeight = (cachedHeight * HEIGHT_SCALE_FACTOR) / distance;
     // Distance-based parallax for transparent walls too
@@ -313,7 +388,7 @@ function render3D(scene, eyeHeight = 0) {
     // Calculate brightness for this distance
     const brightness = calculateBrightness(distance);
     
-    renderTranslucentSlice(main_ctx, x, y, sliceWidth, wallHeight, texture, color, textureX, brightness);
+    renderTranslucentSlice(main_ctx, x, y, sliceWidth, wallHeight, texture, color, textureX, brightness, boundary, spriteTexture, mirrored);
   }
 }
 

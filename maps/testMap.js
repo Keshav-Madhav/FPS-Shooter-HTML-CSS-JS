@@ -15,7 +15,20 @@ function createTestMap(textures, name) {
   const enemies = [];
   const wallTexture = textures.getTexture("wall");
   const edgeTexture = textures.getTexture("edge");
-  const cacoDemon = textures.getTexture("cacoDemon");
+  
+  // 8-directional individual sprites (new system)
+  // Index: 0=front, 1=front-left, 2=left, 3=back-left, 4=back
+  // Right-side views mirror left-side sprites
+  const directionalSprites = [
+    textures.getTexture("enemySprite0"),  // Front
+    textures.getTexture("enemySprite1"),  // Front-left
+    textures.getTexture("enemySprite2"),  // Left
+    textures.getTexture("enemySprite3"),  // Back-left
+    textures.getTexture("enemySprite4")   // Back
+  ];
+  
+  // Use the first sprite as the default texture for the boundary
+  const cacoDemon = directionalSprites[0];
   const mapWidth = 1900;
   const mapHeight = 1080;
 
@@ -169,6 +182,7 @@ function createTestMap(textures, name) {
     fov: 60,
     rayCount: 3,
     texture: cacoDemon,
+    directionalSprites: directionalSprites,
     id: 1
   }));
 
@@ -180,6 +194,7 @@ function createTestMap(textures, name) {
     fov: 45,
     rayCount: 2,
     texture: cacoDemon,
+    directionalSprites: directionalSprites,
     id: 2
   }));
 
@@ -191,6 +206,7 @@ function createTestMap(textures, name) {
     fov: 45,
     rayCount: 2,
     texture: cacoDemon,
+    directionalSprites: directionalSprites,
     id: 3
   }));
 
@@ -202,6 +218,7 @@ function createTestMap(textures, name) {
     fov: 90,
     rayCount: 4,
     texture: cacoDemon,
+    directionalSprites: directionalSprites,
     id: 4
   }));
 
@@ -229,6 +246,7 @@ function createTestMap(textures, name) {
     moveTime: 2,
     repeatMovement: true,
     texture: cacoDemon,
+    directionalSprites: directionalSprites,
     id: 5
   }));
 
@@ -240,6 +258,7 @@ function createTestMap(textures, name) {
     fov: 70,
     rayCount: 3,
     texture: cacoDemon,
+    directionalSprites: directionalSprites,
     id: 6
   }));
 

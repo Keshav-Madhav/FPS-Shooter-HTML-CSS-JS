@@ -146,8 +146,13 @@ function getNearbyBoundaries(boundaries, posX, posY, maxDist) {
  * @param {Array} nearbyBoundaries - Boundaries to check for ray intersection
  * @param {number} [maxConeDistance] - Optional max distance to clamp cone (for minimap bounds)
  * @param {boolean} [playerCrouching=false] - Whether player is crouching (reduces detection)
+ * @param {boolean} [rotateWithPlayer=false] - Whether minimap rotates with player
+ * @param {number} [rotationAngle=0] - Rotation angle in radians
+ * @param {number} [centerX=0] - Minimap center X
+ * @param {number} [centerY=0] - Minimap center Y
+ * @param {Object} [playerPos=null] - Player position {x, y}
  */
-function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxConeDistance = Infinity, playerCrouching = false) {
+function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxConeDistance = Infinity, playerCrouching = false, rotateWithPlayer = false, rotationAngle = 0, centerX = 0, centerY = 0, playerPos = null) {
   const posX = enemy.pos.x;
   const posY = enemy.pos.y;
   const viewAngle = enemy.viewDirection * DEG_TO_RAD;
@@ -158,8 +163,21 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxCon
   // Clamp maxDist to the smaller of visibility distance and minimap bounds
   const maxDist = Math.min(enemy.visibilityDistance * crouchMultiplier, maxConeDistance);
   
-  const cx = posX + offsetX;
-  const cy = posY + offsetY;
+  // Helper to rotate a world point for rotating minimap
+  const cosR = Math.cos(rotationAngle);
+  const sinR = Math.sin(rotationAngle);
+  function rotatePoint(worldX, worldY) {
+    if (!rotateWithPlayer || !playerPos) {
+      return { x: worldX + offsetX, y: worldY + offsetY };
+    }
+    const dx = worldX - playerPos.x;
+    const dy = worldY - playerPos.y;
+    const rotatedX = dx * cosR - dy * sinR;
+    const rotatedY = dx * sinR + dy * cosR;
+    return { x: rotatedX + centerX, y: rotatedY + centerY };
+  }
+  
+  const enemyCenter = rotatePoint(posX, posY);
   
   // More rays for smoother enemy cones
   const rayCount = 32;
@@ -167,16 +185,17 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxCon
   
   ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
   ctx.beginPath();
-  ctx.moveTo(cx, cy);
+  ctx.moveTo(enemyCenter.x, enemyCenter.y);
   
   for (let i = 0; i <= rayCount; i++) {
     const angle = viewAngle - halfFov + i * angleStep;
     let dist = castMinimapRay(posX, posY, angle, maxDist, nearbyBoundaries);
     // Double-clamp to ensure cone stays within bounds
     dist = Math.min(dist, maxDist);
-    const hitX = posX + Math.cos(angle) * dist + offsetX;
-    const hitY = posY + Math.sin(angle) * dist + offsetY;
-    ctx.lineTo(hitX, hitY);
+    const hitWorldX = posX + Math.cos(angle) * dist;
+    const hitWorldY = posY + Math.sin(angle) * dist;
+    const hitPos = rotatePoint(hitWorldX, hitWorldY);
+    ctx.lineTo(hitPos.x, hitPos.y);
   }
   
   ctx.closePath();
@@ -198,10 +217,32 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
   const centerX = miniMapSettings.x * invScale;
   const centerY = miniMapSettings.y * invScale;
   const radius = miniMapSettings.radius;
+  const rotateWithPlayer = miniMapSettings.rotateWithPlayer || false;
   
   // Culling radius for enemies (slightly larger than minimap)
   const enemyCullRadius = radius * 1.25;
   const enemyCullRadiusSq = enemyCullRadius * enemyCullRadius;
+  
+  // Rotation angle (rotate so player faces up/north)
+  // Player view direction 0 = right, so we need to rotate by -(viewDirection + 90°) to make "up" the forward direction
+  const rotationAngle = rotateWithPlayer ? -(user.viewDirection + 90) * DEG_TO_RAD : 0;
+  const cosR = Math.cos(rotationAngle);
+  const sinR = Math.sin(rotationAngle);
+  
+  // Helper function to rotate a point around the player position
+  function rotatePoint(worldX, worldY) {
+    if (!rotateWithPlayer) {
+      return { x: worldX + centerX - user.pos.x, y: worldY + centerY - user.pos.y };
+    }
+    // Translate to player-relative coordinates
+    const dx = worldX - user.pos.x;
+    const dy = worldY - user.pos.y;
+    // Rotate
+    const rotatedX = dx * cosR - dy * sinR;
+    const rotatedY = dx * sinR + dy * cosR;
+    // Translate to minimap center
+    return { x: rotatedX + centerX, y: rotatedY + centerY };
+  }
 
   ctx.save();
   ctx.scale(scale, scale);
@@ -216,14 +257,15 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
   ctx.lineWidth = 2 * invScale;
   ctx.stroke();
 
-  // Calculate offset to keep player centered
+  // Calculate offset to keep player centered (used for non-rotated mode)
   const offsetX = centerX - user.pos.x;
   const offsetY = centerY - user.pos.y;
 
   // Draw goal zone if provided (pulsing green circle)
   if (goalZone) {
-    const goalX = goalZone.x + offsetX;
-    const goalY = goalZone.y + offsetY;
+    const goalPos = rotatePoint(goalZone.x, goalZone.y);
+    const goalX = goalPos.x;
+    const goalY = goalPos.y;
     const goalRadius = goalZone.radius;
     
     // Pulsing effect
@@ -280,27 +322,32 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
       const segments = 12;
       const angleDiff = boundary.endAngle - boundary.startAngle;
       
-      let x = boundary.centerX + boundary.radius * fastCos(boundary.startAngle) + offsetX;
-      let y = boundary.centerY + boundary.radius * fastSin(boundary.startAngle) + offsetY;
-      ctx.moveTo(x, y);
+      const startWorldX = boundary.centerX + boundary.radius * fastCos(boundary.startAngle);
+      const startWorldY = boundary.centerY + boundary.radius * fastSin(boundary.startAngle);
+      const startPos = rotatePoint(startWorldX, startWorldY);
+      ctx.moveTo(startPos.x, startPos.y);
       
       for (let j = 1; j <= segments; j++) {
         const angle = boundary.startAngle + (j / segments) * angleDiff;
-        x = boundary.centerX + boundary.radius * fastCos(angle) + offsetX;
-        y = boundary.centerY + boundary.radius * fastSin(angle) + offsetY;
-          ctx.lineTo(x, y);
+        const worldX = boundary.centerX + boundary.radius * fastCos(angle);
+        const worldY = boundary.centerY + boundary.radius * fastSin(angle);
+        const pos = rotatePoint(worldX, worldY);
+        ctx.lineTo(pos.x, pos.y);
       }
       ctx.stroke();
     } else {
+      const posA = rotatePoint(boundary.a.x, boundary.a.y);
+      const posB = rotatePoint(boundary.b.x, boundary.b.y);
       ctx.beginPath();
-      ctx.moveTo(boundary.a.x + offsetX, boundary.a.y + offsetY);
-      ctx.lineTo(boundary.b.x + offsetX, boundary.b.y + offsetY);
+      ctx.moveTo(posA.x, posA.y);
+      ctx.lineTo(posB.x, posB.y);
       ctx.stroke();
     }
   }
 
   // Draw player FOV cone (simple arc, no raycasting)
-  const playerDirRad = user.viewDirection * DEG_TO_RAD;
+  // When rotateWithPlayer is enabled, player always faces up (north = -90 degrees in canvas coords)
+  const playerDirRad = rotateWithPlayer ? -Math.PI / 2 : user.viewDirection * DEG_TO_RAD;
   const playerFovHalfRad = (user.camera.fov * 0.5) * DEG_TO_RAD;
   const playerFovLength = 150;
   
@@ -346,14 +393,14 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
     
     // Draw FOV cone - clamp to minimap radius to prevent infinite cones
     // Pass player crouch state to show reduced detection when crouching
-    drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, radius, user.isCrouching);
+    // Pass rotation info for rotating minimap
+    drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, radius, user.isCrouching, rotateWithPlayer, rotationAngle, centerX, centerY, user.pos);
 
     // Enemy position dot
-    const enemyCenterX = enemy.pos.x + offsetX;
-    const enemyCenterY = enemy.pos.y + offsetY;
+    const enemyPos = rotatePoint(enemy.pos.x, enemy.pos.y);
     ctx.fillStyle = 'red';
     ctx.beginPath();
-    ctx.arc(enemyCenterX, enemyCenterY, 2 * invScale, 0, Math.PI * 2);
+    ctx.arc(enemyPos.x, enemyPos.y, 2 * invScale, 0, Math.PI * 2);
     ctx.fill();
   }
 

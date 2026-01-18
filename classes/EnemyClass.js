@@ -20,6 +20,11 @@ class EnemyClass {
    * @param {number} [options.moveTime=1] - Duration in seconds for each movement step
    * @param {boolean} [options.repeatMovement=false] - Whether to repeat the movement pattern
    * @param {HTMLImageElement} [options.texture=null] - The texture image for the enemy
+   * @param {Object} [options.spriteSheet=null] - Sprite sheet configuration for 8-directional sprites (legacy)
+   * @param {number} [options.spriteSheet.columns=8] - Number of columns in sprite sheet
+   * @param {number} [options.spriteSheet.rows=6] - Number of rows in sprite sheet
+   * @param {number} [options.spriteSheet.uniqueFrames=5] - Number of unique direction frames
+   * @param {HTMLImageElement[]} [options.directionalSprites=null] - Array of 5 individual sprite images for 8-directional rendering
    * @param {number} [options.id] - The unique identifier for the enemy
    */
   constructor({
@@ -36,6 +41,8 @@ class EnemyClass {
     moveTime = 1,
     repeatMovement = false,
     texture = null,
+    spriteSheet = null,
+    directionalSprites = null,
     id
   }) {
     this.pos = { x, y };
@@ -81,17 +88,23 @@ class EnemyClass {
 
     this.skin = new Boundaries({
       x1: x, 
-      y1: y - 10,
+      y1: y - 20,
       x2: x,
-      y2: y + 10,
+      y2: y + 20,
       texture,
       options: { 
         uniqueID: id,
         isTransparent: true,
-        isSprite: true
+        isSprite: true,
+        spriteSheet: spriteSheet,
+        directionalSprites: directionalSprites
       }
     });
     this.id = id;
+    
+    // Store sprite config for reference
+    this.spriteSheet = spriteSheet;
+    this.directionalSprites = directionalSprites;
     
     // Pre-compute half FOV in degrees for detection
     this._halfFov = fov * 0.5;

@@ -1,4 +1,4 @@
-import { DEG_TO_RAD, fastSin, fastCos, distanceSquared, distance } from '../utils/mathLUT.js';
+import { DEG_TO_RAD, RAD_TO_DEG, fastSin, fastCos, distanceSquared, distance } from '../utils/mathLUT.js';
 
 /**
  * Represents a boundary (wall) in the game.
@@ -18,6 +18,13 @@ class Boundaries {
    * @param {string} [setUp.options.uniqueID] - A unique identifier for the boundary.
    * @param {boolean} [setUp.options.isTransparent] - Whether this boundary has transparent texture (sprites).
    * @param {boolean} [setUp.options.isSprite] - Whether this boundary is a sprite (always faces player).
+   * @param {Object} [setUp.options.spriteSheet] - Sprite sheet configuration for 8-directional sprites (legacy).
+   * @param {number} [setUp.options.spriteSheet.columns=8] - Number of columns in the sprite sheet.
+   * @param {number} [setUp.options.spriteSheet.rows=6] - Number of rows in the sprite sheet.
+   * @param {number} [setUp.options.spriteSheet.directions=8] - Number of directions (uses first row).
+   * @param {number} [setUp.options.spriteSheet.uniqueFrames=5] - Number of unique frames (rest are mirrored).
+   * @param {HTMLImageElement[]} [setUp.options.directionalSprites] - Array of 5 sprite images for 8-directional rendering.
+   *        Index 0=front, 1=front-left, 2=left, 3=back-left, 4=back. Right-side views mirror left-side sprites.
    * @param {number[]} [setUp.options.rotationStops] - Array of angles for rotation animation (degrees).
    * @param {number} [setUp.options.rotationTime=1] - Duration in seconds for each rotation step.
    * @param {boolean} [setUp.options.repeatRotation=false] - Whether to repeat the rotation animation.
@@ -37,6 +44,28 @@ class Boundaries {
     this.isTransparent = options.isTransparent || false; // For sprites with transparency
     this.isSprite = options.isSprite || false; // Billboard sprites
     this.isCurved = false; // Flag to identify this is not a curved wall
+    
+    // 8-directional sprite sheet configuration (legacy)
+    this.spriteSheet = options.spriteSheet || null;
+    if (this.spriteSheet) {
+      this.spriteSheet.columns = this.spriteSheet.columns || 8;
+      this.spriteSheet.rows = this.spriteSheet.rows || 6;
+      this.spriteSheet.directions = this.spriteSheet.directions || 8;
+      this.spriteSheet.uniqueFrames = this.spriteSheet.uniqueFrames || 5;
+      // Pre-calculate sprite frame width (as fraction of texture width)
+      this.spriteSheet.frameWidth = 1 / this.spriteSheet.columns;
+      // Inset to avoid sampling edges/padding between sprites (as fraction of frame width)
+      // This shrinks the sample area slightly to stay within sprite content
+      this.spriteSheet.frameInset = this.spriteSheet.frameInset || 0.05;
+    }
+    
+    // 8-directional individual sprites (new system)
+    // Array of 5 images: [front, front-left, left, back-left, back]
+    // Right-side views (front-right, right, back-right) mirror left-side sprites
+    this.directionalSprites = options.directionalSprites || null;
+    
+    // Facing direction for 8-directional sprites (set by enemy)
+    this.facingDirection = 0;
     
     // Store initial center position for animations
     this._initialCenterX = (x1 + x2) * 0.5;
@@ -364,6 +393,115 @@ class Boundaries {
     const distSq = dx * dx + dy * dy;
     const totalRadius = this.boundingRadius + Math.sqrt(maxDistSq);
     return distSq < totalRadius * totalRadius;
+  }
+
+  /**
+   * Calculates the sprite frame and mirroring for 8-directional sprites
+   * based on the player's position relative to the sprite's facing direction.
+   * 
+   * The relative angle determines what part of the enemy the player sees:
+   * - 0°: Enemy faces player → player sees FRONT
+   * - 90°: Enemy rotated 90° clockwise → player sees LEFT side
+   * - 180°: Enemy faces away → player sees BACK
+   * - 270°: Enemy rotated 270° CW (90° CCW) → player sees RIGHT side
+   * 
+   * @param {number} playerX - Player's X position
+   * @param {number} playerY - Player's Y position
+   * @returns {{frameIndex: number, mirrored: boolean, textureOffset: number, spriteTexture: HTMLImageElement|null}} 
+   *          Frame info for rendering
+   */
+  getDirectionalSpriteFrame(playerX, playerY) {
+    // Check if using new individual sprites system
+    if (this.directionalSprites && this.directionalSprites.length === 5) {
+      // Calculate angle from sprite to player
+      const dx = playerX - this.centerX;
+      const dy = playerY - this.centerY;
+      const angleToPlayer = Math.atan2(dy, dx) * RAD_TO_DEG;
+      
+      // Calculate how much the enemy has rotated from directly facing the player
+      // Use angleToPlayer - facingDirection to get correct rotation direction
+      let relativeAngle = angleToPlayer - this.facingDirection;
+      relativeAngle = ((relativeAngle % 360) + 360) % 360;
+      
+      // Divide into 8 sectors (each 45 degrees)
+      const sector = Math.floor(((relativeAngle + 22.5) % 360) / 45);
+      
+      // Map sector to sprite index and mirroring
+      // Sectors: 0=front, 1=front-left, 2=left, 3=back-left, 4=back, 5=back-right, 6=right, 7=front-right
+      // Sprites: 0=front, 1=front-left, 2=left, 3=back-left, 4=back
+      // Sectors 5,6,7 (right side) mirror sprites 3,2,1
+      
+      let frameIndex;
+      let mirrored = false;
+      
+      if (sector <= 4) {
+        frameIndex = sector;
+      } else {
+        frameIndex = 8 - sector;
+        mirrored = true;
+      }
+      
+      return { 
+        frameIndex, 
+        mirrored, 
+        textureOffset: 0, 
+        spriteTexture: this.directionalSprites[frameIndex]
+      };
+    }
+    
+    // Legacy sprite sheet system
+    if (!this.spriteSheet) {
+      return { frameIndex: 0, mirrored: false, textureOffset: 0, spriteTexture: null };
+    }
+    
+    // Calculate angle from sprite to player
+    const dx = playerX - this.centerX;
+    const dy = playerY - this.centerY;
+    const angleToPlayer = Math.atan2(dy, dx) * RAD_TO_DEG;
+    
+    // Calculate how much the enemy has rotated from directly facing the player
+    // If facingDirection == angleToPlayer, enemy faces player → relativeAngle = 0 → show front
+    // If facingDirection == angleToPlayer + 180, enemy faces away → relativeAngle = 180 → show back
+    let relativeAngle = this.facingDirection - angleToPlayer;
+    relativeAngle = ((relativeAngle % 360) + 360) % 360;
+    
+    // Divide into 8 sectors (each 45 degrees)
+    // Offset by 22.5 degrees so sector boundaries are between directions
+    const sector = Math.floor(((relativeAngle + 22.5) % 360) / 45);
+    
+    // Map sector to sprite frame index and mirroring
+    // Sectors: 0=front, 1=front-left, 2=left, 3=back-left, 4=back, 5=back-right, 6=right, 7=front-right
+    // Sprite sheet: 0=front, 1=front-left, 2=left, 3=back-left, 4=back
+    // Sectors 5,6,7 (right side) mirror sprites 3,2,1
+    
+    let frameIndex;
+    let mirrored = false;
+    
+    if (sector <= 4) {
+      // Left side and front/back: use sprites directly
+      frameIndex = sector;
+    } else {
+      // Right side: mirror the corresponding left-side sprite
+      // sector 5 (back-right) → sprite 3 mirrored
+      // sector 6 (right) → sprite 2 mirrored
+      // sector 7 (front-right) → sprite 1 mirrored
+      frameIndex = 8 - sector;
+      mirrored = true;
+    }
+    
+    // Calculate the texture offset for this frame
+    // Each frame is 1/8 of the texture width
+    const textureOffset = frameIndex * this.spriteSheet.frameWidth;
+    
+    return { frameIndex, mirrored, textureOffset, spriteTexture: null };
+  }
+
+  /**
+   * Updates the facing direction (called by enemy when rotating)
+   * @param {number} direction - Facing direction in degrees
+   */
+  setFacingDirection(direction) {
+    this.facingDirection = direction;
   }
 }
 
