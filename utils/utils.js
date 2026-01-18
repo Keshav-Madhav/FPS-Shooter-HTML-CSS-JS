@@ -449,11 +449,13 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
       enemy.visibilityDistance
     );
     
+    // Calculate enemy position on minimap (needed for both proximity circle and dot)
+    const enemyPos = rotatePoint(enemy.pos.x, enemy.pos.y);
+    
     // Draw 360° proximity detection circle (15% of main visibility distance)
     // Only visible when player is NOT crouching (crouching disables proximity detection)
     if (!user.isCrouching) {
       const proximityDistance = enemy.visibilityDistance * 0.15;
-      const enemyPos = rotatePoint(enemy.pos.x, enemy.pos.y);
       
       ctx.fillStyle = 'rgba(255, 100, 100, 0.15)'; // Light red for proximity zone
       ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
