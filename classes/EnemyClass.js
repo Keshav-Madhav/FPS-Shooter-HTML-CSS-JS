@@ -251,9 +251,52 @@ class EnemyClass {
   }
 
   /**
+   * Calculates the effective visibility distance based on angle from center of view.
+   * Creates a cone-shaped detection area:
+   * - Center 20%: Full distance
+   * - Next 20% on each side: Reduces from 100% to 40%
+   * - Outer 20% on each side: Remains at 40%
+   * @param {number} angleFromCenter - Angle in degrees from the center of view (0 to halfFov)
+   * @param {number} halfFov - Half of the field of view in degrees
+   * @param {number} maxDistance - Maximum visibility distance (at center)
+   * @returns {number} The effective visibility distance at this angle
+   */
+  getEffectiveVisibilityDistance(angleFromCenter, halfFov, maxDistance) {
+    if (halfFov === 0) return maxDistance;
+    
+    // Normalize angle to 0-1 range (0 = center, 1 = edge)
+    const normalizedAngle = Math.min(Math.abs(angleFromCenter) / halfFov, 1);
+    
+    // Cone-shaped falloff zones:
+    // 0.0 - 0.2: Full distance (center 20%)
+    // 0.2 - 0.4: Transition from 100% to 40% (20% on each side)
+    // 0.4 - 1.0: Remain at 40% (outer 20% on each side)
+    const fullDistanceThreshold = 0.2;
+    const transitionEnd = 0.4;
+    const minMultiplier = 0.4;
+    
+    if (normalizedAngle <= fullDistanceThreshold) {
+      // Center zone - full distance
+      return maxDistance;
+    } else if (normalizedAngle <= transitionEnd) {
+      // Transition zone - smooth reduction from 100% to 40%
+      const transitionProgress = (normalizedAngle - fullDistanceThreshold) / (transitionEnd - fullDistanceThreshold);
+      // Use quadratic falloff for smooth but noticeable reduction
+      const falloff = 1 - (transitionProgress * transitionProgress);
+      const multiplier = minMultiplier + (1 - minMultiplier) * falloff;
+      return maxDistance * multiplier;
+    } else {
+      // Outer zone - remain at minimum (40%)
+      return maxDistance * minMultiplier;
+    }
+  }
+
+  /**
    * Detects if the player is visible to the enemy.
    * Optimized with squared distance checks and early exits.
    * Crouching reduces detection range and cone by half.
+   * Visibility distance tapers off towards the edges of the FOV.
+   * Also includes 360° proximity detection at 10% of main distance for close encounters.
    * @param {Player} player - The player object to check for detection.
    * @param {Array<Boundaries>} boundaries - Array of boundary objects for the scene.
    * @returns {{isDetected: boolean, distance: number|null, userPosition: Object|null, relativeAngle: number|null}}
@@ -262,14 +305,19 @@ class EnemyClass {
     const dx = player.pos.x - this.pos.x;
     const dy = player.pos.y - this.pos.y;
 
-    // Crouching reduces detection range and cone by half
-    const crouchMultiplier = player.isCrouching ? 0.5 : 1.0;
-    const effectiveVisibilityDistSq = this._visibilityDistanceSq * crouchMultiplier * crouchMultiplier;
-    const effectiveHalfFov = this._halfFov * crouchMultiplier;
+    // Crouching/sneaking reduces front detection to 75% and disables proximity detection
+    const crouchMultiplier = player.isCrouching ? 0.75 : 1.0;
+    const effectiveMaxVisibilityDist = this.visibilityDistance * crouchMultiplier;
+    const effectiveHalfFov = this._halfFov; // FOV angle doesn't change when crouching
+    
+    // Proximity detection distance (15% of main visibility distance, covers full 360°)
+    // Disabled when crouching (0 distance means no proximity detection)
+    const proximityDistance = player.isCrouching ? 0 : this.visibilityDistance * 0.15;
 
-    // Quick squared distance check (avoids sqrt)
+    // Quick squared distance check against maximum possible distance (avoids sqrt for far objects)
     const distSq = dx * dx + dy * dy;
-    if (distSq > effectiveVisibilityDistSq) {
+    const maxDistSq = effectiveMaxVisibilityDist * effectiveMaxVisibilityDist;
+    if (distSq > maxDistSq) {
       this.wasDetected = false;
       return { isDetected: false, distance: null, userPosition: null, relativeAngle: null };
     }
@@ -280,11 +328,30 @@ class EnemyClass {
     const angleToPlayer = Math.atan2(dy, dx) * RAD_TO_DEG;
     const normalizedAngle = ((angleToPlayer % 360) + 360) % 360;
 
-    // Normalize relative angle
+    // Normalize relative angle to get angle from center of view
     let relativeAngle = ((normalizedAngle - this.viewDirection + 360) % 360);
+    
+    // Convert to angle from center (-halfFov to +halfFov range)
+    let angleFromCenter = relativeAngle;
+    if (angleFromCenter > 180) {
+      angleFromCenter = angleFromCenter - 360; // Convert 270-360 to -90-0
+    }
 
-    // Check if within FOV (using effective half FOV based on crouch state)
-    if (relativeAngle <= effectiveHalfFov || relativeAngle >= 360 - effectiveHalfFov) {
+    // Check if within primary FOV
+    if (Math.abs(angleFromCenter) <= effectiveHalfFov) {
+      // Calculate tapered visibility distance based on angle from center
+      const effectiveVisibilityDist = this.getEffectiveVisibilityDistance(
+        angleFromCenter, 
+        effectiveHalfFov, 
+        effectiveMaxVisibilityDist
+      );
+      
+      // Check if player is within the tapered distance
+      if (distance > effectiveVisibilityDist) {
+        this.wasDetected = false;
+        return { isDetected: false, distance: null, userPosition: null, relativeAngle: null };
+      }
+      
       // Cast ray to check for obstructions
       const ray = new RayClass(this.pos.x, this.pos.y, angleToPlayer * DEG_TO_RAD);
       
@@ -309,14 +376,50 @@ class EnemyClass {
         }
       }
 
-      // No obstruction - player is visible
-        this.wasDetected = true;
-        return {
-          isDetected: true,
-          distance,
-          userPosition: player.pos,
-          relativeAngle
-        };
+      // No obstruction - player is visible in primary FOV
+      this.wasDetected = true;
+      return {
+        isDetected: true,
+        distance,
+        userPosition: player.pos,
+        relativeAngle
+      };
+    }
+    
+    // Not in primary FOV - check proximity detection (360° awareness)
+    if (distance <= proximityDistance) {
+      // Cast ray to check for obstructions
+      const ray = new RayClass(this.pos.x, this.pos.y, angleToPlayer * DEG_TO_RAD);
+      
+      // Check only opaque boundaries for obstruction
+      for (let i = 0; i < boundaries.length; i++) {
+        const boundary = boundaries[i];
+        
+        // Skip transparent boundaries (sprites)
+        if (boundary.isTransparent) continue;
+        
+        const result = ray.cast(boundary);
+        if (result) {
+          const bdx = result.point.x - this.pos.x;
+          const bdy = result.point.y - this.pos.y;
+          const boundaryDist = Math.sqrt(bdx * bdx + bdy * bdy);
+
+          // If boundary is closer than player, visibility is blocked
+          if (boundaryDist < distance) {
+            this.wasDetected = false;
+            return { isDetected: false, distance: null, userPosition: null, relativeAngle: null };
+          }
+        }
+      }
+
+      // No obstruction - player detected via proximity (360° awareness)
+      this.wasDetected = true;
+      return {
+        isDetected: true,
+        distance,
+        userPosition: player.pos,
+        relativeAngle
+      };
     }
 
     this.wasDetected = false;

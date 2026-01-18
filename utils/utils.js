@@ -137,8 +137,50 @@ function getNearbyBoundaries(boundaries, posX, posY, maxDist) {
 }
 
 /**
- * Draws enemy FOV cone that stops at walls
- * Uses only 6 rays for performance
+ * Calculates the effective visibility distance based on angle from center of view.
+ * Creates a cone-shaped detection area:
+ * - Center 20%: Full distance
+ * - Next 20% on each side: Reduces from 100% to 40%
+ * - Outer 20% on each side: Remains at 40%
+ * This matches the detection logic in EnemyClass.
+ * @param {number} angleFromCenter - Angle in radians from the center of view
+ * @param {number} halfFovRad - Half of the field of view in radians
+ * @param {number} maxDistance - Maximum visibility distance (at center)
+ * @returns {number} The effective visibility distance at this angle
+ */
+function getEffectiveVisibilityDistance(angleFromCenter, halfFovRad, maxDistance) {
+  if (halfFovRad === 0) return maxDistance;
+  
+  // Normalize angle to 0-1 range (0 = center, 1 = edge)
+  const normalizedAngle = Math.min(Math.abs(angleFromCenter) / halfFovRad, 1);
+  
+  // Cone-shaped falloff zones:
+  // 0.0 - 0.2: Full distance (center 20%)
+  // 0.2 - 0.4: Transition from 100% to 40% (20% on each side)
+  // 0.4 - 1.0: Remain at 40% (outer 20% on each side)
+  const fullDistanceThreshold = 0.2;
+  const transitionEnd = 0.4;
+  const minMultiplier = 0.4;
+  
+  if (normalizedAngle <= fullDistanceThreshold) {
+    // Center zone - full distance
+    return maxDistance;
+  } else if (normalizedAngle <= transitionEnd) {
+    // Transition zone - smooth reduction from 100% to 40%
+    const transitionProgress = (normalizedAngle - fullDistanceThreshold) / (transitionEnd - fullDistanceThreshold);
+    // Use quadratic falloff for smooth but noticeable reduction
+    const falloff = 1 - (transitionProgress * transitionProgress);
+    const multiplier = minMultiplier + (1 - minMultiplier) * falloff;
+    return maxDistance * multiplier;
+  } else {
+    // Outer zone - remain at minimum (40%)
+    return maxDistance * minMultiplier;
+  }
+}
+
+/**
+ * Draws enemy FOV cone that stops at walls with tapered visibility distance.
+ * The cone is longer at the center and shorter at the edges.
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {Object} enemy - Enemy object
  * @param {number} offsetX - X offset for centering
@@ -159,9 +201,9 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxCon
   
   // Crouching reduces enemy detection range and cone by half
   const crouchMultiplier = playerCrouching ? 0.5 : 1.0;
-  const halfFov = (enemy.fov * 0.5 * crouchMultiplier) * DEG_TO_RAD;
-  // Clamp maxDist to the smaller of visibility distance and minimap bounds
-  const maxDist = Math.min(enemy.visibilityDistance * crouchMultiplier, maxConeDistance);
+  const halfFovRad = (enemy.fov * 0.5 * crouchMultiplier) * DEG_TO_RAD;
+  // Maximum visibility distance (at center of cone)
+  const maxVisibilityDist = enemy.visibilityDistance * crouchMultiplier;
   
   // Helper to rotate a world point for rotating minimap
   const cosR = Math.cos(rotationAngle);
@@ -181,17 +223,28 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxCon
   
   // More rays for smoother enemy cones
   const rayCount = 32;
-  const angleStep = (halfFov * 2) / rayCount;
+  const angleStep = (halfFovRad * 2) / rayCount;
   
   ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
   ctx.beginPath();
   ctx.moveTo(enemyCenter.x, enemyCenter.y);
   
   for (let i = 0; i <= rayCount; i++) {
-    const angle = viewAngle - halfFov + i * angleStep;
-    let dist = castMinimapRay(posX, posY, angle, maxDist, nearbyBoundaries);
-    // Double-clamp to ensure cone stays within bounds
-    dist = Math.min(dist, maxDist);
+    // Calculate angle relative to view direction (-halfFov to +halfFov)
+    const angleFromCenter = -halfFovRad + i * angleStep;
+    const angle = viewAngle + angleFromCenter;
+    
+    // Calculate tapered max distance for this angle
+    const taperedMaxDist = getEffectiveVisibilityDistance(angleFromCenter, halfFovRad, maxVisibilityDist);
+    
+    // Clamp to minimap bounds
+    const effectiveMaxDist = Math.min(taperedMaxDist, maxConeDistance);
+    
+    // Cast ray to find walls
+    let dist = castMinimapRay(posX, posY, angle, effectiveMaxDist, nearbyBoundaries);
+    // Double-clamp to ensure cone stays within tapered bounds
+    dist = Math.min(dist, effectiveMaxDist);
+    
     const hitWorldX = posX + Math.cos(angle) * dist;
     const hitWorldY = posY + Math.sin(angle) * dist;
     const hitPos = rotatePoint(hitWorldX, hitWorldY);
@@ -219,9 +272,8 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
   const radius = miniMapSettings.radius;
   const rotateWithPlayer = miniMapSettings.rotateWithPlayer || false;
   
-  // Culling radius for enemies (slightly larger than minimap)
-  const enemyCullRadius = radius * 1.25;
-  const enemyCullRadiusSq = enemyCullRadius * enemyCullRadius;
+  // Note: Enemy culling is now done per-enemy based on their visibility distance
+  // to ensure we show cones that could reach the player even if the enemy is far away
   
   // Rotation angle (rotate so player faces up/north)
   // Player view direction 0 = right, so we need to rotate by -(viewDirection + 90°) to make "up" the forward direction
@@ -369,17 +421,23 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
   ctx.arc(centerX, centerY, 3 * invScale, 0, Math.PI * 2);
   ctx.fill();
 
-  // Draw enemy FOV cones - only for enemies within minimap radius
+  // Draw enemy FOV cones - include enemies whose cone could reach the minimap area
   for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
 
     // Distance from player (minimap center) to enemy
     const dx = enemy.pos.x - user.pos.x;
     const dy = enemy.pos.y - user.pos.y;
-    const distSq = dx * dx + dy * dy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
     
-    // Skip if enemy is outside the culling radius
-    if (distSq > enemyCullRadiusSq) {
+    // Cull enemies whose cone can't possibly reach the minimap area
+    // An enemy at distance D with visibility V can reach as close as (D - V) to the player
+    // We show the enemy if their cone could reach the visible minimap (with some margin)
+    const crouchMultiplier = user.isCrouching ? 0.5 : 1.0;
+    const effectiveVisibility = enemy.visibilityDistance * crouchMultiplier;
+    const cullDistance = radius + effectiveVisibility;
+    
+    if (dist > cullDistance) {
       continue;
     }
     
@@ -391,13 +449,28 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
       enemy.visibilityDistance
     );
     
-    // Draw FOV cone - clamp to minimap radius to prevent infinite cones
+    // Draw 360° proximity detection circle (15% of main visibility distance)
+    // Only visible when player is NOT crouching (crouching disables proximity detection)
+    if (!user.isCrouching) {
+      const proximityDistance = enemy.visibilityDistance * 0.15;
+      const enemyPos = rotatePoint(enemy.pos.x, enemy.pos.y);
+      
+      ctx.fillStyle = 'rgba(255, 100, 100, 0.15)'; // Light red for proximity zone
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+      ctx.lineWidth = 1 * invScale;
+      ctx.beginPath();
+      ctx.arc(enemyPos.x, enemyPos.y, proximityDistance, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    
+    // Draw FOV cone showing true detection range
+    // The canvas clip path handles the circular minimap boundary
     // Pass player crouch state to show reduced detection when crouching
     // Pass rotation info for rotating minimap
-    drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, radius, user.isCrouching, rotateWithPlayer, rotationAngle, centerX, centerY, user.pos);
+    drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, Infinity, user.isCrouching, rotateWithPlayer, rotationAngle, centerX, centerY, user.pos);
 
-    // Enemy position dot
-    const enemyPos = rotatePoint(enemy.pos.x, enemy.pos.y);
+    // Enemy position dot (on top of everything)
     ctx.fillStyle = 'red';
     ctx.beginPath();
     ctx.arc(enemyPos.x, enemyPos.y, 2 * invScale, 0, Math.PI * 2);

@@ -781,6 +781,9 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
     return true;
   }
   
+  // Consistent FOV for all maze enemies
+  const MAZE_ENEMY_FOV = 80;
+  
   /**
    * Creates an enemy at the specified cell with patrol behavior
    */
@@ -795,8 +798,8 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
     let moveTime = 2 + Math.random() * 1.5;
     let rotationTime = 0.8 + Math.random() * 0.5;
     let initialViewDir;
-    let visibilityDistance = cellSize * 1.5; // Reduced detection range
-    let fov = 75;
+    let visibilityDistance = cellSize * 1; // Reduced detection range
+    let fov = MAZE_ENEMY_FOV; // Consistent FOV for all maze enemies
     
     switch (enemyType) {
       case 'patrol': {
@@ -842,7 +845,6 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
         if (Math.abs(returnDelta) > 1) rotationStops.push(returnDelta);
         
         rotationTime = 1.5 + Math.random();
-        fov = 85; // Wider FOV for guards
         visibilityDistance = cellSize * 2.5;
         break;
       }
@@ -859,7 +861,6 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
         
         rotationStops = [delta, -delta]; // Look one way, then the other
         rotationTime = 2 + Math.random() * 1.5;
-        fov = 80;
         break;
       }
       
@@ -871,8 +872,7 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
         // Small head movements
         rotationStops = [15, -30, 15]; // Slight left-right scanning
         rotationTime = 2.5 + Math.random();
-        fov = 70;
-        visibilityDistance = cellSize * 3; // Reduced sight line
+        visibilityDistance = cellSize * 3; // Longer sight line for sentries
         break;
       }
     }

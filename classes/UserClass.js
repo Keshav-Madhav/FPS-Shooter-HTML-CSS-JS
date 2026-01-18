@@ -24,7 +24,7 @@ const UNCROUCH_SPEED = 0.08; // How fast player stands up from crouch
 
 // Speed constants
 const BASE_MOVE_SPEED = 1; // Normal walking speed
-const CROUCH_SPEED_MULTIPLIER = 0.7; // 70% speed when crouching
+const CROUCH_SPEED_MULTIPLIER = 0.45; // 70% speed when crouching
 const SPRINT_SPEED_MULTIPLIER = 3; // 3x speed when sprinting
 
 // FOV constants
