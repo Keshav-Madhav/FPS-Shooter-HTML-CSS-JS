@@ -4,7 +4,7 @@ import Textures from "./classes/TexturesClass.js";
 import Player from "./classes/UserClass.js";
 import EnemyClass from "./classes/EnemyClass.js";
 import { createTestMap } from "./maps/testMap.js";
-import { createMazeMap } from "./maps/mazeMap.js";
+import { createMazeMap, findMazePath } from "./maps/mazeMap.js";
 import { createShowcaseMap } from "./maps/showcaseMap.js";
 import { createEnemyTestMap } from "./maps/enemyTestMap.js";
 import { getDeltaTime } from "./utils/deltaTime.js";
@@ -43,6 +43,13 @@ let selectedMapIndex = 0;
 let isPlayerDetected = false;
 let detectionAlertOpacity = 0;
 
+// Noclip mode state
+let noclipEnabled = false;
+
+// Path reveal state
+let showPath = false;
+let currentPath = null;
+
 main_canvas.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
     player.moveForwards = true;
@@ -73,6 +80,29 @@ main_canvas.addEventListener('keydown', (e) => {
     // Reset player position
     player.pos = {x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y};
     player.updateViewDirection(ActiveMap.userViewDirection);
+  }
+  
+  // Toggle noclip mode (N key)
+  if (e.key === 'n' || e.key === 'N') {
+    noclipEnabled = player.toggleCollision();
+    console.log(`Noclip mode: ${noclipEnabled ? 'ON' : 'OFF'}`);
+  }
+  
+  // Toggle path reveal (P key)
+  if (e.key === 'p' || e.key === 'P') {
+    showPath = !showPath;
+    if (showPath && ActiveMap.mazeData) {
+      // Calculate path from start through player to goal
+      currentPath = findMazePath(
+        ActiveMap.mazeData,
+        ActiveMap.startZone,
+        player.pos,
+        ActiveMap.goalZone
+      );
+    } else {
+      currentPath = null;
+    }
+    console.log(`Path reveal: ${showPath ? 'ON' : 'OFF'}`);
   }
   
   // Map selector toggle (M or Tab)
@@ -168,6 +198,10 @@ function setActiveMap(gameMaps, mapName) {
 
   player.pos = {x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y};
   player.updateViewDirection(ActiveMap.userViewDirection);
+  
+  // Reset path when changing maps
+  showPath = false;
+  currentPath = null;
   
   // Apply map-specific minimap settings or use defaults
   if (ActiveMap.minimapSettings) {
@@ -420,7 +454,17 @@ function draw() {
     }
   });
 
-  drawMinimap(main_ctx, boundaries, player, enemies);
+  // Update path if showing (recalculate based on current player position)
+  if (showPath && ActiveMap.mazeData) {
+    currentPath = findMazePath(
+      ActiveMap.mazeData,
+      ActiveMap.startZone,
+      player.pos,
+      ActiveMap.goalZone
+    );
+  }
+  
+  drawMinimap(main_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, currentPath);
 
   drawFPS(main_canvas.width, main_canvas.height, main_ctx);
   
@@ -432,7 +476,22 @@ function draw() {
     main_ctx.textBaseline = 'top';
     main_ctx.fillText(`Map: ${ActiveMap.name}`, 10, 10);
     main_ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    main_ctx.fillText('Press M or Tab to change map | R to reset | 1-4 quick select', 10, 10 + main_canvas.height * 0.025);
+    main_ctx.fillText('M: map select | R: reset | N: noclip | P: show path', 10, 10 + main_canvas.height * 0.025);
+    
+    // Draw noclip indicator if enabled
+    if (noclipEnabled) {
+      main_ctx.fillStyle = 'rgba(255, 150, 50, 0.9)';
+      main_ctx.font = `bold ${Math.floor(main_canvas.height * 0.025)}px Arial`;
+      main_ctx.fillText('NOCLIP', 10, 10 + main_canvas.height * 0.055);
+    }
+    
+    // Draw path indicator if enabled
+    if (showPath) {
+      main_ctx.fillStyle = 'rgba(255, 200, 50, 0.9)';
+      main_ctx.font = `bold ${Math.floor(main_canvas.height * 0.025)}px Arial`;
+      const pathX = noclipEnabled ? 100 : 10;
+      main_ctx.fillText('PATH', pathX, 10 + main_canvas.height * 0.055);
+    }
   }
   
   // Draw detection alert at bottom center

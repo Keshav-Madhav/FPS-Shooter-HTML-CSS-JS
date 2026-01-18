@@ -263,8 +263,10 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxCon
  * @param {Object} user - Player object
  * @param {Array} enemies - Array of enemy objects
  * @param {Object} [goalZone] - Optional goal zone {x, y, radius}
+ * @param {Object} [startZone] - Optional start zone {x, y, radius}
+ * @param {Array} [pathPoints] - Optional array of {x, y} points to draw as a path
  */
-function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
+function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone = null, pathPoints = null) {
   const scale = miniMapSettings.scale;
   const invScale = 1 / scale;
   const centerX = miniMapSettings.x * invScale;
@@ -313,6 +315,41 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
   const offsetX = centerX - user.pos.x;
   const offsetY = centerY - user.pos.y;
 
+  // Draw start zone if provided (pulsing blue/cyan circle)
+  if (startZone) {
+    const startPos = rotatePoint(startZone.x, startZone.y);
+    const startX = startPos.x;
+    const startY = startPos.y;
+    const startRadius = startZone.radius;
+    
+    // Pulsing effect (slightly different timing)
+    const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.003);
+    
+    // Outer glow (cyan/blue color)
+    const startGradient = ctx.createRadialGradient(startX, startY, 0, startX, startY, startRadius * 1.5);
+    startGradient.addColorStop(0, `rgba(0, 200, 255, ${0.5 * pulse})`);
+    startGradient.addColorStop(0.7, `rgba(0, 200, 255, ${0.25 * pulse})`);
+    startGradient.addColorStop(1, 'rgba(0, 200, 255, 0)');
+    
+    ctx.fillStyle = startGradient;
+    ctx.beginPath();
+    ctx.arc(startX, startY, startRadius * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Start marker ring
+    ctx.strokeStyle = `rgba(0, 200, 255, ${pulse})`;
+    ctx.lineWidth = 2 * invScale;
+    ctx.beginPath();
+    ctx.arc(startX, startY, startRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Inner start marker
+    ctx.fillStyle = `rgba(0, 200, 255, ${0.8 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(startX, startY, 4 * invScale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Draw goal zone if provided (pulsing green circle)
   if (goalZone) {
     const goalPos = rotatePoint(goalZone.x, goalZone.y);
@@ -346,6 +383,39 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null) {
     ctx.beginPath();
     ctx.arc(goalX, goalY, 4 * invScale, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // Draw path if provided (animated dotted line from start through player to goal)
+  if (pathPoints && pathPoints.length >= 2) {
+    const pathPulse = 0.6 + 0.4 * Math.sin(performance.now() * 0.005);
+    
+    // Draw path segments
+    ctx.strokeStyle = `rgba(255, 200, 50, ${0.8 * pathPulse})`;
+    ctx.lineWidth = 3 * invScale;
+    ctx.setLineDash([8 * invScale, 6 * invScale]);
+    
+    // Animate dash offset for flowing effect
+    ctx.lineDashOffset = -performance.now() * 0.03;
+    
+    ctx.beginPath();
+    const firstPoint = rotatePoint(pathPoints[0].x, pathPoints[0].y);
+    ctx.moveTo(firstPoint.x, firstPoint.y);
+    
+    for (let i = 1; i < pathPoints.length; i++) {
+      const point = rotatePoint(pathPoints[i].x, pathPoints[i].y);
+      ctx.lineTo(point.x, point.y);
+    }
+    ctx.stroke();
+    
+    // Draw waypoint dots along the path
+    ctx.setLineDash([]); // Reset line dash
+    ctx.fillStyle = `rgba(255, 220, 100, ${0.7 * pathPulse})`;
+    for (let i = 0; i < pathPoints.length; i++) {
+      const point = rotatePoint(pathPoints[i].x, pathPoints[i].y);
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 2.5 * invScale, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // Draw boundaries (opaque first, then translucent)

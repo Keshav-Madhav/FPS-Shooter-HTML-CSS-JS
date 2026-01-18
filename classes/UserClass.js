@@ -74,6 +74,9 @@ class Player {
     this.isCrouching = false; // Whether player is crouching
     this.wantsToCrouch = false; // Input state for crouch key
     
+    // Collision state
+    this.collisionEnabled = true; // Whether collision detection is active (noclip mode when false)
+    
     // FOV state
     this.baseFov = fov; // Base FOV
     this.currentFov = fov; // Current interpolated FOV
@@ -274,12 +277,21 @@ class Player {
   }
   
   /**
+   * Toggles collision detection on/off (noclip mode)
+   * @returns {boolean} The new collision state
+   */
+  toggleCollision() {
+    this.collisionEnabled = !this.collisionEnabled;
+    return this.collisionEnabled;
+  }
+
+  /**
    * Resolves collisions with walls even when player is not moving.
    * This handles moving walls that push into the player.
    * @private
    */
   _resolveStaticCollisions() {
-    if (this._boundaries.length === 0) return;
+    if (!this.collisionEnabled || this._boundaries.length === 0) return;
     
     // Iterative collision resolution (max 5 iterations for moving walls)
     for (let iter = 0; iter < 5; iter++) {
@@ -373,7 +385,8 @@ class Player {
    * @private
    */
   _resolveCollision(startX, startY, dx, dy) {
-    if (this._boundaries.length === 0) {
+    // Skip collision when disabled (noclip mode)
+    if (!this.collisionEnabled || this._boundaries.length === 0) {
       return { x: startX + dx, y: startY + dy };
     }
 

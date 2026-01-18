@@ -251,8 +251,12 @@ function addDeadEnds(grid, deadEndChance) {
  * Each cell is divided as: [wallThickness][corridorWidth][wallThickness]
  * But walls are shared between cells, so effectively:
  * - Cell interior (corridor) starts at wallThickness/2 and ends at cellSize - wallThickness/2
+ * 
+ * @param {Object} options - Configuration options
+ * @param {Object} [options.startTexture] - Special texture for start cell walls
+ * @param {Object} [options.endTexture] - Special texture for end cell walls
  */
-function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTexture, curveChance) {
+function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTexture, curveChance, options = {}) {
   const boundaries = [];
   const rows = grid.length;
   const cols = grid[0].length;
@@ -261,6 +265,18 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
   const corridorWidth = cellSize - wallThickness;
   const curveRadius = halfWall;
   
+  // Special textures for start and end cells
+  const startTexture = options.startTexture || wallTexture;
+  const endTexture = options.endTexture || wallTexture;
+  const startCurveTexture = options.startTexture || curveTexture;
+  const endCurveTexture = options.endTexture || curveTexture;
+  
+  // Start cell is at (0, 0), end cell is at (cols-1, rows-1)
+  const startCellX = 0;
+  const startCellY = 0;
+  const endCellX = cols - 1;
+  const endCellY = rows - 1;
+  
   // For thick walls, we create wall segments on both sides of the logical wall position
   // A wall at grid position creates two parallel walls offset by halfWall
   
@@ -268,6 +284,20 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const cell = grid[y][x];
+      
+      // Determine which texture to use based on cell position
+      const isStartCell = (x === startCellX && y === startCellY);
+      const isEndCell = (x === endCellX && y === endCellY);
+      let cellWallTexture = wallTexture;
+      let cellCurveTexture = curveTexture;
+      
+      if (isStartCell) {
+        cellWallTexture = startTexture;
+        cellCurveTexture = startCurveTexture;
+      } else if (isEndCell) {
+        cellWallTexture = endTexture;
+        cellCurveTexture = endCurveTexture;
+      }
       
       // Calculate cell bounds in world coordinates
       const cellLeft = x * cellSize;
@@ -300,7 +330,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
             radius: curveRadius,
             startAngle: Math.PI,
             endAngle: Math.PI * 1.5,
-            texture: curveTexture
+            texture: cellCurveTexture
           }));
         }
         
@@ -313,7 +343,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
             radius: curveRadius,
             startAngle: Math.PI * 1.5,
             endAngle: Math.PI * 2,
-            texture: curveTexture
+            texture: cellCurveTexture
           }));
         }
         
@@ -323,7 +353,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
             y1: corridorTop,
             x2: wallEndX,
             y2: corridorTop,
-            texture: wallTexture
+            texture: cellWallTexture
           }));
         }
       }
@@ -344,7 +374,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
             radius: curveRadius,
             startAngle: Math.PI * 0.5,
             endAngle: Math.PI,
-            texture: curveTexture
+            texture: cellCurveTexture
           }));
         }
         
@@ -356,7 +386,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
             radius: curveRadius,
             startAngle: 0,
             endAngle: Math.PI * 0.5,
-            texture: curveTexture
+            texture: cellCurveTexture
           }));
         }
         
@@ -366,7 +396,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
             y1: corridorBottom,
             x2: wallEndX,
             y2: corridorBottom,
-            texture: wallTexture
+            texture: cellWallTexture
           }));
         }
       }
@@ -386,7 +416,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
             y1: wallStartY,
             x2: corridorLeft,
             y2: wallEndY,
-            texture: wallTexture
+            texture: cellWallTexture
           }));
         }
       }
@@ -405,7 +435,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
             y1: wallStartY,
             x2: corridorRight,
             y2: wallEndY,
-            texture: wallTexture
+            texture: cellWallTexture
           }));
         }
       }
@@ -421,7 +451,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
           y1: cellTop,
           x2: corridorLeft,
           y2: corridorTop,
-          texture: wallTexture
+          texture: cellWallTexture
         }));
         // Right side of passage
         boundaries.push(new Boundaries({
@@ -429,7 +459,7 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
           y1: cellTop,
           x2: corridorRight,
           y2: corridorTop,
-          texture: wallTexture
+          texture: cellWallTexture
         }));
       }
       
@@ -440,14 +470,14 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
           y1: corridorBottom,
           x2: corridorLeft,
           y2: cellBottom,
-          texture: wallTexture
+          texture: cellWallTexture
         }));
         boundaries.push(new Boundaries({
           x1: corridorRight,
           y1: corridorBottom,
           x2: corridorRight,
           y2: cellBottom,
-          texture: wallTexture
+          texture: cellWallTexture
         }));
       }
       
@@ -458,14 +488,14 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
           y1: corridorTop,
           x2: corridorLeft,
           y2: corridorTop,
-          texture: wallTexture
+          texture: cellWallTexture
         }));
         boundaries.push(new Boundaries({
           x1: cellLeft,
           y1: corridorBottom,
           x2: corridorLeft,
           y2: corridorBottom,
-          texture: wallTexture
+          texture: cellWallTexture
         }));
       }
       
@@ -476,14 +506,14 @@ function gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTextu
           y1: corridorTop,
           x2: cellRight,
           y2: corridorTop,
-          texture: wallTexture
+          texture: cellWallTexture
         }));
         boundaries.push(new Boundaries({
           x1: corridorRight,
           y1: corridorBottom,
           x2: cellRight,
           y2: corridorBottom,
-          texture: wallTexture
+          texture: cellWallTexture
         }));
       }
     }
@@ -1000,6 +1030,9 @@ function createMazeMap(textures, name, options = {}) {
   const wallTexture = textures.getTexture("wall");
   const curveTexture = wallTexture;
   
+  // Special texture for start and end cells (uses the alternate texture)
+  const specialCellTexture = textures.getTexture("edge") || wallTexture;
+  
   // 8-directional individual sprites (new system)
   // Index: 0=front, 1=front-left, 2=left, 3=back-left, 4=back
   // Right-side views mirror left-side sprites
@@ -1025,7 +1058,11 @@ function createMazeMap(textures, name, options = {}) {
   const rooms = createRooms(grid, roomCount, roomMinSize, roomMaxSize);
   
   // Convert to boundaries with thick walls
-  const boundaries = gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTexture, curveChance);
+  // Use special texture for start (top-left) and end (bottom-right) cells
+  const boundaries = gridToBoundaries(grid, cellSize, wallThickness, wallTexture, curveTexture, curveChance, {
+    startTexture: specialCellTexture,
+    endTexture: specialCellTexture
+  });
   
   // Spawn player in center of top-left cell
   const spawnLocation = {
@@ -1044,6 +1081,34 @@ function createMazeMap(textures, name, options = {}) {
   mazeMap.addBoundaries(boundaries);
   mazeMap.addEnemies(enemies);
   
+  // Set up start zone (top-left cell) and goal zone (bottom-right cell)
+  const halfWall = wallThickness / 2;
+  const corridorWidth = cellSize - wallThickness;
+  
+  // Start zone in center of first cell
+  mazeMap.startZone = {
+    x: cellSize * 0.5,
+    y: cellSize * 0.5,
+    radius: corridorWidth * 0.4
+  };
+  
+  // Goal zone in center of last cell (bottom-right corner)
+  const goalX = (cols - 1) * cellSize + cellSize * 0.5;
+  const goalY = (rows - 1) * cellSize + cellSize * 0.5;
+  mazeMap.setGoalZone({
+    x: goalX,
+    y: goalY,
+    radius: corridorWidth * 0.4
+  });
+  
+  // Store maze data for pathfinding
+  mazeMap.mazeData = {
+    grid: grid,
+    cols: cols,
+    rows: rows,
+    cellSize: cellSize
+  };
+  
   // Set zoomed-in minimap for the maze (easier to navigate tight corridors)
   mazeMap.setMinimapSettings({
     scale: 0.4,  // More zoomed in than default (0.25)
@@ -1051,8 +1116,112 @@ function createMazeMap(textures, name, options = {}) {
   });
   
   console.log(`Maze generated: ${cols}x${rows} grid, ${boundaries.length} walls, ${enemies.length} enemies, ${rooms.length} rooms`);
+  console.log(`Start zone: (${spawnLocation.x}, ${spawnLocation.y}), Goal zone: (${goalX}, ${goalY})`);
   
   return mazeMap;
 }
 
-export { createMazeMap };
+/**
+ * Finds a path through the maze using BFS (Breadth-First Search)
+ * Returns world coordinates of the path from start through playerPos to goal
+ * 
+ * @param {Object} mazeData - The maze data {grid, cols, rows, cellSize}
+ * @param {Object} startPos - World coordinates {x, y} of start position
+ * @param {Object} playerPos - World coordinates {x, y} of player position
+ * @param {Object} goalPos - World coordinates {x, y} of goal position
+ * @returns {Array|null} Array of world coordinate points [{x, y}] or null if no path
+ */
+function findMazePath(mazeData, startPos, playerPos, goalPos) {
+  if (!mazeData || !mazeData.grid) return null;
+  
+  const { grid, cols, rows, cellSize } = mazeData;
+  
+  // Convert world coordinates to grid coordinates
+  function worldToGrid(worldX, worldY) {
+    return {
+      x: Math.floor(worldX / cellSize),
+      y: Math.floor(worldY / cellSize)
+    };
+  }
+  
+  // Convert grid coordinates to world coordinates (center of cell)
+  function gridToWorld(gridX, gridY) {
+    return {
+      x: gridX * cellSize + cellSize * 0.5,
+      y: gridY * cellSize + cellSize * 0.5
+    };
+  }
+  
+  // Get cell at grid position
+  function getCell(x, y) {
+    if (y < 0 || y >= rows || x < 0 || x >= cols) return null;
+    return grid[y][x];
+  }
+  
+  // BFS to find path between two grid positions
+  function bfsPath(fromGrid, toGrid) {
+    const visited = new Set();
+    const queue = [{ x: fromGrid.x, y: fromGrid.y, path: [] }];
+    visited.add(`${fromGrid.x},${fromGrid.y}`);
+    
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const currentPath = [...current.path, { x: current.x, y: current.y }];
+      
+      // Check if we reached the goal
+      if (current.x === toGrid.x && current.y === toGrid.y) {
+        return currentPath;
+      }
+      
+      const cell = getCell(current.x, current.y);
+      if (!cell) continue;
+      
+      // Check all four directions
+      const directions = [
+        { dx: 0, dy: -1, wall: 'north' },  // North
+        { dx: 0, dy: 1, wall: 'south' },   // South
+        { dx: 1, dy: 0, wall: 'east' },    // East
+        { dx: -1, dy: 0, wall: 'west' }    // West
+      ];
+      
+      for (const dir of directions) {
+        const nx = current.x + dir.dx;
+        const ny = current.y + dir.dy;
+        const key = `${nx},${ny}`;
+        
+        // Skip if already visited or out of bounds
+        if (visited.has(key)) continue;
+        if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+        
+        // Check if there's a wall blocking this direction
+        if (cell.walls[dir.wall]) continue;
+        
+        visited.add(key);
+        queue.push({ x: nx, y: ny, path: currentPath });
+      }
+    }
+    
+    return null; // No path found
+  }
+  
+  // Convert positions to grid coordinates
+  const startGrid = worldToGrid(startPos.x, startPos.y);
+  const playerGrid = worldToGrid(playerPos.x, playerPos.y);
+  const goalGrid = worldToGrid(goalPos.x, goalPos.y);
+  
+  // Find path from start to player
+  const pathToPlayer = bfsPath(startGrid, playerGrid);
+  if (!pathToPlayer) return null;
+  
+  // Find path from player to goal
+  const pathToGoal = bfsPath(playerGrid, goalGrid);
+  if (!pathToGoal) return null;
+  
+  // Combine paths (remove duplicate player position)
+  const combinedPath = [...pathToPlayer, ...pathToGoal.slice(1)];
+  
+  // Convert grid path to world coordinates
+  return combinedPath.map(p => gridToWorld(p.x, p.y));
+}
+
+export { createMazeMap, findMazePath };
