@@ -50,6 +50,16 @@ let noclipEnabled = false;
 let showPath = false;
 let currentPath = null;
 
+// Detection timer state (for maze map)
+const DETECTION_TIMER_MAX = 5.0; // 5 seconds
+const DETECTION_DRAIN_RATE = 1.0; // 1 second per second when detected
+const DETECTION_REGEN_RATE = 0.1; // 0.1 seconds per second when not detected (10x slower)
+const DETECTION_REGEN_DELAY = 1.0; // 1 second delay before regen starts
+let detectionTimer = DETECTION_TIMER_MAX;
+let isGameOver = false;
+let lastFrameTime = performance.now();
+let timeSinceLastDetection = 0; // Track time since last detection for regen delay
+
 main_canvas.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
     player.moveForwards = true;
@@ -77,9 +87,12 @@ main_canvas.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 'r' || e.key === 'R') {
-    // Reset player position
+    // Reset player position and timer
     player.pos = {x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y};
     player.updateViewDirection(ActiveMap.userViewDirection);
+    detectionTimer = DETECTION_TIMER_MAX;
+    isGameOver = false;
+    timeSinceLastDetection = 0;
   }
   
   // Toggle noclip mode (N key)
@@ -203,6 +216,11 @@ function setActiveMap(gameMaps, mapName) {
   showPath = false;
   currentPath = null;
   
+  // Reset detection timer
+  detectionTimer = DETECTION_TIMER_MAX;
+  isGameOver = false;
+  timeSinceLastDetection = 0;
+  
   // Apply map-specific minimap settings or use defaults
   if (ActiveMap.minimapSettings) {
     miniMapSettings.scale = ActiveMap.minimapSettings.scale ?? defaultMinimapSettings.scale;
@@ -286,6 +304,128 @@ function drawDetectionAlert() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, w / 2, y);
+  
+  ctx.restore();
+}
+
+/**
+ * Draws the detection timer (only for maze map)
+ */
+function drawDetectionTimer() {
+  // Only show timer for maze map and when not full
+  if (!ActiveMap.mazeData) return;
+  if (detectionTimer >= DETECTION_TIMER_MAX) return;
+  
+  const ctx = main_ctx;
+  const w = main_canvas.width;
+  const h = main_canvas.height;
+  
+  // Position at bottom center
+  const timerX = w / 2;
+  const timerY = h - 100;
+  
+  // Calculate timer percentage
+  const timerPercent = detectionTimer / DETECTION_TIMER_MAX;
+  
+  // Determine color based on timer level
+  let timerColor;
+  if (timerPercent > 0.6) {
+    timerColor = 'rgba(100, 255, 100, 0.9)'; // Green
+  } else if (timerPercent > 0.3) {
+    timerColor = 'rgba(255, 200, 50, 0.9)'; // Yellow/Orange
+  } else {
+    // Red with pulsing effect when low
+    const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.015);
+    timerColor = `rgba(255, 50, 50, ${0.9 * pulse})`;
+  }
+  
+  // Format timer with 2 decimal places
+  const timerText = detectionTimer.toFixed(2) + 's';
+  
+  ctx.save();
+  
+  // Draw timer background bar
+  const barWidth = 200;
+  const barHeight = 20;
+  const barX = timerX - barWidth / 2;
+  const barY = timerY - barHeight / 2;
+  
+  // Background
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(barX - 5, barY - 5, barWidth + 10, barHeight + 10);
+  
+  // Timer bar border
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX, barY, barWidth, barHeight);
+  
+  // Timer bar fill
+  ctx.fillStyle = timerColor;
+  ctx.fillRect(barX + 2, barY + 2, (barWidth - 4) * timerPercent, barHeight - 4);
+  
+  // Timer text (centered above bar)
+  ctx.font = `bold ${Math.floor(h * 0.025)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = timerColor;
+  ctx.fillText(timerText, timerX, timerY - barHeight - 5);
+  
+  // Label (below bar)
+  ctx.font = `${Math.floor(h * 0.015)}px Arial`;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.textAlign = 'center';
+  ctx.fillText('ALERT', timerX, timerY + barHeight);
+  
+  ctx.restore();
+}
+
+/**
+ * Draws the game over screen
+ */
+function drawGameOverScreen() {
+  if (!isGameOver) return;
+  
+  const ctx = main_ctx;
+  const w = main_canvas.width;
+  const h = main_canvas.height;
+  
+  ctx.save();
+  
+  // Dark overlay with fade effect
+  ctx.fillStyle = 'rgba(20, 0, 0, 0.85)';
+  ctx.fillRect(0, 0, w, h);
+  
+  // Red vignette effect
+  const gradient = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w * 0.7);
+  gradient.addColorStop(0, 'rgba(50, 0, 0, 0)');
+  gradient.addColorStop(1, 'rgba(100, 0, 0, 0.5)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, w, h);
+  
+  // Pulsing effect
+  const pulse = 0.85 + 0.15 * Math.sin(performance.now() * 0.003);
+  
+  // "CAUGHT" text
+  ctx.font = `bold ${Math.floor(h * 0.12)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  // Text shadow/glow
+  ctx.shadowColor = 'rgba(255, 0, 0, 0.8)';
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = `rgba(255, 50, 50, ${pulse})`;
+  ctx.fillText('CAUGHT', w / 2, h * 0.4);
+  
+  // Subtitle
+  ctx.shadowBlur = 0;
+  ctx.font = `${Math.floor(h * 0.035)}px Arial`;
+  ctx.fillStyle = 'rgba(255, 150, 150, 0.8)';
+  ctx.fillText('You were detected for too long!', w / 2, h * 0.52);
+  
+  // Instructions
+  ctx.font = `${Math.floor(h * 0.03)}px Arial`;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.fillText('Press R to restart', w / 2, h * 0.65);
   
   ctx.restore();
 }
@@ -413,7 +553,22 @@ function draw() {
   // Redraw background with current eye height for parallax effect
   drawBackground(background_ctx, background_canvas.height, background_canvas.width, player.eyeHeight);
 
+  // Calculate real delta time for timer (independent of game deltaTime)
+  const currentTime = performance.now();
+  const realDeltaSeconds = (currentTime - lastFrameTime) / 1000;
+  lastFrameTime = currentTime;
+
   const deltaTime = getDeltaTime(120);
+
+  // If game over, only render scene but don't update
+  if (isGameOver) {
+    const scene = player.getScene(boundaries);
+    render3D(scene, player.eyeHeight);
+    drawMinimap(main_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, currentPath);
+    drawDetectionTimer();
+    drawGameOverScreen();
+    return;
+  }
 
   // Update animated boundaries
   for (let i = 0; i < boundaries.length; i++) {
@@ -453,6 +608,31 @@ function draw() {
       enemyBoundary.setFacingDirection(enemy.viewDirection);
     }
   });
+
+  // Update detection timer (only for maze map)
+  if (ActiveMap.mazeData) {
+    if (isPlayerDetected) {
+      // Drain timer when detected
+      detectionTimer -= DETECTION_DRAIN_RATE * realDeltaSeconds;
+      timeSinceLastDetection = 0; // Reset regen delay
+      if (detectionTimer <= 0) {
+        detectionTimer = 0;
+        isGameOver = true;
+      }
+    } else {
+      // Track time since last detection
+      timeSinceLastDetection += realDeltaSeconds;
+      
+      // Only regenerate after delay has passed AND not crouching
+      // (crouching prevents regen - you must stand to recover)
+      if (timeSinceLastDetection >= DETECTION_REGEN_DELAY && !player.isCrouching) {
+        detectionTimer += DETECTION_REGEN_RATE * realDeltaSeconds;
+        if (detectionTimer > DETECTION_TIMER_MAX) {
+          detectionTimer = DETECTION_TIMER_MAX;
+        }
+      }
+    }
+  }
 
   // Update path if showing (recalculate based on current player position)
   if (showPath && ActiveMap.mazeData) {
@@ -496,6 +676,12 @@ function draw() {
   
   // Draw detection alert at bottom center
   drawDetectionAlert();
+  
+  // Draw detection timer (maze map only)
+  drawDetectionTimer();
+  
+  // Draw game over screen if applicable
+  drawGameOverScreen();
   
   // Draw map selector overlay
   drawMapSelector();

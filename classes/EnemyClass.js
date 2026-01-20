@@ -294,9 +294,11 @@ class EnemyClass {
   /**
    * Detects if the player is visible to the enemy.
    * Optimized with squared distance checks and early exits.
-   * Crouching reduces detection range and cone by half.
+   * Crouching reduces detection range to 75% and disables proximity detection.
+   * Jumping recently increases detection range by 1.2x.
+   * Sprinting decreases detection range to 80% but increases FOV by 1.3x.
    * Visibility distance tapers off towards the edges of the FOV.
-   * Also includes 360° proximity detection at 10% of main distance for close encounters.
+   * Also includes 360° proximity detection at 15% of main distance for close encounters.
    * @param {Player} player - The player object to check for detection.
    * @param {Array<Boundaries>} boundaries - Array of boundary objects for the scene.
    * @returns {{isDetected: boolean, distance: number|null, userPosition: Object|null, relativeAngle: number|null}}
@@ -307,12 +309,19 @@ class EnemyClass {
 
     // Crouching/sneaking reduces front detection to 75% and disables proximity detection
     const crouchMultiplier = player.isCrouching ? 0.75 : 1.0;
-    const effectiveMaxVisibilityDist = this.visibilityDistance * crouchMultiplier;
-    const effectiveHalfFov = this._halfFov; // FOV angle doesn't change when crouching
+    // Jumping recently increases detection range by 1.2x (player is more visible)
+    const jumpMultiplier = (player.hasRecentlyJumped && player.hasRecentlyJumped()) ? 1.2 : 1.0;
+    // Sprinting decreases detection range to 80% but increases FOV (harder to focus on fast target)
+    const sprintRangeMultiplier = player.isSprinting ? 0.8 : 1.0;
+    const sprintFovMultiplier = player.isSprinting ? 1.3 : 1.0;
+    
+    const effectiveMaxVisibilityDist = this.visibilityDistance * crouchMultiplier * jumpMultiplier * sprintRangeMultiplier;
+    const effectiveHalfFov = this._halfFov * sprintFovMultiplier; // FOV increases when player is sprinting
     
     // Proximity detection distance (15% of main visibility distance, covers full 360°)
     // Disabled when crouching (0 distance means no proximity detection)
-    const proximityDistance = player.isCrouching ? 0 : this.visibilityDistance * 0.15;
+    // Affected by jump and sprint multipliers
+    const proximityDistance = player.isCrouching ? 0 : this.visibilityDistance * 0.15 * jumpMultiplier * sprintRangeMultiplier;
 
     // Quick squared distance check against maximum possible distance (avoids sqrt for far objects)
     const distSq = dx * dx + dy * dy;

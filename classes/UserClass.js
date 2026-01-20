@@ -26,6 +26,7 @@ const UNCROUCH_SPEED = 0.08; // How fast player stands up from crouch
 const BASE_MOVE_SPEED = 1; // Normal walking speed
 const CROUCH_SPEED_MULTIPLIER = 0.45; // 70% speed when crouching
 const SPRINT_SPEED_MULTIPLIER = 3; // 3x speed when sprinting
+const JUMP_SPEED_MULTIPLIER = 1.4; // 1.4x speed when jumping (risk/reward tradeoff)
 
 // FOV constants
 const BASE_FOV = 80; // Default field of view
@@ -76,6 +77,10 @@ class Player {
     
     // Collision state
     this.collisionEnabled = true; // Whether collision detection is active (noclip mode when false)
+    
+    // Jump tracking for detection system
+    this.lastJumpTime = 0; // Timestamp of last jump
+    this.recentJumpWindow = 0.25; // Time window in seconds to consider "recently jumped"
     
     // FOV state
     this.baseFov = fov; // Base FOV
@@ -140,7 +145,7 @@ class Player {
   }
 
   /**
-   * Updates movement speed based on crouch/sprint state
+   * Updates movement speed based on crouch/sprint/jump state
    * @private
    */
   _updateMovementSpeed() {
@@ -148,6 +153,9 @@ class Player {
       this.moveSpeed = this.baseMoveSpeed * CROUCH_SPEED_MULTIPLIER;
     } else if (this.isSprinting) {
       this.moveSpeed = this.baseMoveSpeed * SPRINT_SPEED_MULTIPLIER;
+    } else if (this.isJumping) {
+      // Speed boost while in the air (risk/reward - faster but more visible)
+      this.moveSpeed = this.baseMoveSpeed * JUMP_SPEED_MULTIPLIER;
     } else {
       this.moveSpeed = this.baseMoveSpeed;
     }
@@ -245,6 +253,7 @@ class Player {
   jump() {
     if (!this.isJumping) {
       this.isJumping = true;
+      this.lastJumpTime = performance.now() / 1000; // Store time in seconds
       // Jump force is reduced if crouching
       const jumpMultiplier = this.isCrouching ? 0.7 : 1.0;
       this.verticalVelocity = JUMP_STRENGTH * jumpMultiplier;
@@ -254,6 +263,15 @@ class Player {
         this.isCrouching = false;
       }
     }
+  }
+
+  /**
+   * Checks if the player has jumped recently (within recentJumpWindow)
+   * @returns {boolean} True if jumped within the time window
+   */
+  hasRecentlyJumped() {
+    const currentTime = performance.now() / 1000;
+    return (currentTime - this.lastJumpTime) <= this.recentJumpWindow;
   }
 
   /**

@@ -187,23 +187,35 @@ function getEffectiveVisibilityDistance(angleFromCenter, halfFovRad, maxDistance
  * @param {number} offsetY - Y offset for centering
  * @param {Array} nearbyBoundaries - Boundaries to check for ray intersection
  * @param {number} [maxConeDistance] - Optional max distance to clamp cone (for minimap bounds)
- * @param {boolean} [playerCrouching=false] - Whether player is crouching (reduces detection)
+ * @param {Object} [player=null] - Player object for crouch/jump state
  * @param {boolean} [rotateWithPlayer=false] - Whether minimap rotates with player
  * @param {number} [rotationAngle=0] - Rotation angle in radians
  * @param {number} [centerX=0] - Minimap center X
  * @param {number} [centerY=0] - Minimap center Y
  * @param {Object} [playerPos=null] - Player position {x, y}
  */
-function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxConeDistance = Infinity, playerCrouching = false, rotateWithPlayer = false, rotationAngle = 0, centerX = 0, centerY = 0, playerPos = null) {
+function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxConeDistance = Infinity, player = null, rotateWithPlayer = false, rotationAngle = 0, centerX = 0, centerY = 0, playerPos = null) {
   const posX = enemy.pos.x;
   const posY = enemy.pos.y;
   const viewAngle = enemy.viewDirection * DEG_TO_RAD;
   
-  // Crouching reduces enemy detection range and cone by half
-  const crouchMultiplier = playerCrouching ? 0.5 : 1.0;
-  const halfFovRad = (enemy.fov * 0.5 * crouchMultiplier) * DEG_TO_RAD;
+  // Match the detection logic from EnemyClass.detectPlayer():
+  // - Crouching reduces detection range to 75% (not FOV angle)
+  // - Jumping recently increases detection range by 1.2x
+  // - Sprinting decreases range to 80% but increases FOV by 1.3x
+  const playerCrouching = player ? player.isCrouching : false;
+  const playerRecentlyJumped = player && player.hasRecentlyJumped ? player.hasRecentlyJumped() : false;
+  const playerSprinting = player ? player.isSprinting : false;
+  
+  const crouchMultiplier = playerCrouching ? 0.75 : 1.0;
+  const jumpMultiplier = playerRecentlyJumped ? 1.2 : 1.0;
+  const sprintRangeMultiplier = playerSprinting ? 0.8 : 1.0;
+  const sprintFovMultiplier = playerSprinting ? 1.3 : 1.0;
+  
+  // FOV angle increases when player is sprinting (matches EnemyClass)
+  const halfFovRad = (enemy.fov * 0.5 * sprintFovMultiplier) * DEG_TO_RAD;
   // Maximum visibility distance (at center of cone)
-  const maxVisibilityDist = enemy.visibilityDistance * crouchMultiplier;
+  const maxVisibilityDist = enemy.visibilityDistance * crouchMultiplier * jumpMultiplier * sprintRangeMultiplier;
   
   // Helper to rotate a world point for rotating minimap
   const cosR = Math.cos(rotationAngle);
@@ -491,6 +503,15 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
   ctx.arc(centerX, centerY, 3 * invScale, 0, Math.PI * 2);
   ctx.fill();
 
+  // Calculate detection multipliers once (matches EnemyClass.detectPlayer logic)
+  const playerCrouching = user.isCrouching;
+  const playerRecentlyJumped = user.hasRecentlyJumped ? user.hasRecentlyJumped() : false;
+  const playerSprinting = user.isSprinting;
+  const crouchMultiplier = playerCrouching ? 0.75 : 1.0;
+  const jumpMultiplier = playerRecentlyJumped ? 1.2 : 1.0;
+  const sprintRangeMultiplier = playerSprinting ? 0.8 : 1.0;
+  const combinedMultiplier = crouchMultiplier * jumpMultiplier * sprintRangeMultiplier;
+
   // Draw enemy FOV cones - include enemies whose cone could reach the minimap area
   for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
@@ -503,8 +524,7 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
     // Cull enemies whose cone can't possibly reach the minimap area
     // An enemy at distance D with visibility V can reach as close as (D - V) to the player
     // We show the enemy if their cone could reach the visible minimap (with some margin)
-    const crouchMultiplier = user.isCrouching ? 0.5 : 1.0;
-    const effectiveVisibility = enemy.visibilityDistance * crouchMultiplier;
+    const effectiveVisibility = enemy.visibilityDistance * combinedMultiplier;
     const cullDistance = radius + effectiveVisibility;
     
     if (dist > cullDistance) {
@@ -516,7 +536,7 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
       boundaries, 
       enemy.pos.x, 
       enemy.pos.y, 
-      enemy.visibilityDistance
+      enemy.visibilityDistance * combinedMultiplier
     );
     
     // Calculate enemy position on minimap (needed for both proximity circle and dot)
@@ -524,8 +544,9 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
     
     // Draw 360° proximity detection circle (15% of main visibility distance)
     // Only visible when player is NOT crouching (crouching disables proximity detection)
-    if (!user.isCrouching) {
-      const proximityDistance = enemy.visibilityDistance * 0.15;
+    // Jumping increases proximity range by 1.2x, sprinting decreases to 80%
+    if (!playerCrouching) {
+      const proximityDistance = enemy.visibilityDistance * 0.15 * jumpMultiplier * sprintRangeMultiplier;
       
       ctx.fillStyle = 'rgba(255, 100, 100, 0.15)'; // Light red for proximity zone
       ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
@@ -538,9 +559,9 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
     
     // Draw FOV cone showing true detection range
     // The canvas clip path handles the circular minimap boundary
-    // Pass player crouch state to show reduced detection when crouching
+    // Pass player object for crouch/jump state to match actual detection
     // Pass rotation info for rotating minimap
-    drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, Infinity, user.isCrouching, rotateWithPlayer, rotationAngle, centerX, centerY, user.pos);
+    drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, Infinity, user, rotateWithPlayer, rotationAngle, centerX, centerY, user.pos);
 
     // Enemy position dot (on top of everything)
     ctx.fillStyle = 'red';
