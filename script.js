@@ -49,6 +49,15 @@ let noclipEnabled = false;
 // Path reveal state
 let showPath = false;
 let currentPath = null;
+let pathUsedOnce = false; // Track if path has been used
+let pathRevealTime = 0; // Time when path was revealed
+const PATH_DISPLAY_DURATION = 3000; // 3 seconds in milliseconds
+let pathRegenerated = false; // Track if path was auto-regenerated from critical alert
+const CRITICAL_ALERT_THRESHOLD = 0.75; // Alert time threshold for path regeneration
+
+// Instructions state (for maze map)
+let showInstructions = true; // Show instructions on maze map start
+let instructionsDismissed = false; // Track if instructions have been dismissed
 
 // Detection timer state (for maze map)
 const DETECTION_TIMER_MAX = 5.0; // 5 seconds
@@ -61,6 +70,19 @@ let lastFrameTime = performance.now();
 let timeSinceLastDetection = 0; // Track time since last detection for regen delay
 
 main_canvas.addEventListener('keydown', (e) => {
+  // Check if instructions are showing on maze map - only allow dismissal
+  if (showInstructions && ActiveMap.mazeData) {
+    // Press Enter or Space to dismiss instructions
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      showInstructions = false;
+      instructionsDismissed = true;
+      console.log('Instructions dismissed - controls enabled');
+    }
+    return; // Block all other inputs while instructions are showing
+  }
+  
+  // Normal game controls (only work after instructions are dismissed)
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
     player.moveForwards = true;
   } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
@@ -93,6 +115,12 @@ main_canvas.addEventListener('keydown', (e) => {
     detectionTimer = DETECTION_TIMER_MAX;
     isGameOver = false;
     timeSinceLastDetection = 0;
+    // Reset path reveal state
+    showPath = false;
+    currentPath = null;
+    pathUsedOnce = false;
+    pathRevealTime = 0;
+    pathRegenerated = false;
   }
   
   // Toggle noclip mode (N key)
@@ -101,10 +129,12 @@ main_canvas.addEventListener('keydown', (e) => {
     console.log(`Noclip mode: ${noclipEnabled ? 'ON' : 'OFF'}`);
   }
   
-  // Toggle path reveal (P key)
+  // Toggle path reveal (P key) - only works once and shows for 3 seconds
   if (e.key === 'p' || e.key === 'P') {
-    showPath = !showPath;
-    if (showPath && ActiveMap.mazeData) {
+    if (!pathUsedOnce && ActiveMap.mazeData) {
+      showPath = true;
+      pathUsedOnce = true;
+      pathRevealTime = performance.now();
       // Calculate path from start through player to goal
       currentPath = findMazePath(
         ActiveMap.mazeData,
@@ -112,10 +142,10 @@ main_canvas.addEventListener('keydown', (e) => {
         player.pos,
         ActiveMap.goalZone
       );
-    } else {
-      currentPath = null;
+      console.log('Path revealed for 3 seconds (one-time use)');
+    } else if (pathUsedOnce) {
+      console.log('Path reveal already used');
     }
-    console.log(`Path reveal: ${showPath ? 'ON' : 'OFF'}`);
   }
   
   // Map selector toggle (M or Tab)
@@ -191,6 +221,9 @@ function lockChangeAlert() {
 }
 
 function updatePosition(e) {
+  // Don't allow camera movement when instructions are showing
+  if (showInstructions && ActiveMap.mazeData) return;
+  
   player.updateViewDirection(player.viewDirection + (e.movementX * sensitivity));
 }
 
@@ -215,6 +248,18 @@ function setActiveMap(gameMaps, mapName) {
   // Reset path when changing maps
   showPath = false;
   currentPath = null;
+  pathUsedOnce = false;
+  pathRevealTime = 0;
+  pathRegenerated = false;
+  
+  // Reset instructions state - show instructions for maze map
+  if (ActiveMap.mazeData) {
+    showInstructions = true;
+    instructionsDismissed = false;
+  } else {
+    showInstructions = false;
+    instructionsDismissed = true;
+  }
   
   // Reset detection timer
   detectionTimer = DETECTION_TIMER_MAX;
@@ -431,6 +476,152 @@ function drawGameOverScreen() {
 }
 
 /**
+ * Draws instructions for the maze map
+ */
+function drawMazeInstructions() {
+  // Only show for maze map and when not dismissed
+  if (!ActiveMap.mazeData || !showInstructions) return;
+  
+  const ctx = main_ctx;
+  const w = main_canvas.width;
+  const h = main_canvas.height;
+  
+  ctx.save();
+  
+  // Semi-transparent background panel
+  const panelWidth = w * 0.5;
+  const panelHeight = h * 0.4;
+  const panelX = (w - panelWidth) / 2;
+  const panelY = h * 0.1;
+  
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+  
+  // Border with pulsing effect
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() * 0.003);
+  ctx.strokeStyle = `rgba(100, 200, 255, ${pulse})`;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+  
+  // Title
+  ctx.fillStyle = '#00ccff';
+  ctx.font = `bold ${Math.floor(h * 0.04)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('MAZE CHALLENGE', w / 2, panelY + h * 0.02);
+  
+  // Instructions
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.font = `${Math.floor(h * 0.022)}px Arial`;
+  ctx.textAlign = 'left';
+  
+  const instructionX = panelX + panelWidth * 0.1;
+  let instructionY = panelY + h * 0.09;
+  const lineHeight = h * 0.035;
+  
+  const instructions = [
+    'OBJECTIVE:',
+    '  • Start from the BLUE zone',
+    '  • Navigate to the GREEN zone',
+    '  • Avoid detection by enemies',
+    '',
+    'HINTS:',
+    '  • Press P to reveal the path (3 seconds, one-time use)',
+    '  • Emergency path help activates if alert drops critically low'
+  ];
+  
+  instructions.forEach((line, index) => {
+    if (line.startsWith('OBJECTIVE:') || line.startsWith('HINTS:')) {
+      ctx.fillStyle = '#ffaa00';
+      ctx.font = `bold ${Math.floor(h * 0.024)}px Arial`;
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.font = `${Math.floor(h * 0.022)}px Arial`;
+    }
+    ctx.fillText(line, instructionX, instructionY);
+    instructionY += lineHeight;
+  });
+  
+  // Dismissal prompt with pulsing effect
+  ctx.textAlign = 'center';
+  ctx.fillStyle = `rgba(100, 255, 100, ${pulse})`;
+  ctx.font = `bold ${Math.floor(h * 0.028)}px Arial`;
+  ctx.fillText('Press ENTER or SPACE to start', w / 2, panelY + panelHeight - h * 0.05);
+  
+  ctx.restore();
+}
+
+/**
+ * Draws the path expiry timer when path is active
+ */
+function drawPathExpiryTimer() {
+  if (!showPath || !ActiveMap.mazeData) return;
+  
+  const ctx = main_ctx;
+  const w = main_canvas.width;
+  const h = main_canvas.height;
+  
+  // Calculate remaining time
+  const elapsed = performance.now() - pathRevealTime;
+  const remaining = PATH_DISPLAY_DURATION - elapsed;
+  const remainingSeconds = Math.max(0, remaining / 1000);
+  
+  ctx.save();
+  
+  // Position at top center
+  const timerX = w / 2;
+  const timerY = h * 0.08;
+  
+  // Timer bar dimensions
+  const barWidth = 200;
+  const barHeight = 25;
+  const barX = timerX - barWidth / 2;
+  const barY = timerY - barHeight / 2;
+  
+  // Calculate percentage
+  const percentage = remainingSeconds / (PATH_DISPLAY_DURATION / 1000);
+  
+  // Color based on remaining time
+  let barColor;
+  if (percentage > 0.6) {
+    barColor = 'rgba(100, 255, 100, 0.9)'; // Green
+  } else if (percentage > 0.3) {
+    barColor = 'rgba(255, 200, 50, 0.9)'; // Yellow
+  } else {
+    // Red with pulsing when low
+    const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.02);
+    barColor = `rgba(255, 50, 50, ${0.9 * pulse})`;
+  }
+  
+  // Background
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.fillRect(barX - 5, barY - 5, barWidth + 10, barHeight + 10);
+  
+  // Border
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(barX, barY, barWidth, barHeight);
+  
+  // Fill bar
+  ctx.fillStyle = barColor;
+  ctx.fillRect(barX + 2, barY + 2, (barWidth - 4) * percentage, barHeight - 4);
+  
+  // Timer text
+  ctx.font = `bold ${Math.floor(h * 0.022)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = barColor;
+  ctx.fillText(remainingSeconds.toFixed(1) + 's', timerX, timerY);
+  
+  // Label above
+  ctx.font = `${Math.floor(h * 0.018)}px Arial`;
+  ctx.fillStyle = 'rgba(255, 200, 50, 0.9)';
+  ctx.fillText('PATH ACTIVE', timerX, timerY - barHeight - 5);
+  
+  ctx.restore();
+}
+
+/**
  * Draws the map selector UI
  */
 function drawMapSelector() {
@@ -560,6 +751,15 @@ function draw() {
 
   const deltaTime = getDeltaTime(120);
 
+  // If instructions are showing, only render scene but don't update
+  if (showInstructions && ActiveMap.mazeData) {
+    const scene = player.getScene(boundaries);
+    render3D(scene, player.eyeHeight);
+    drawMinimap(main_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, currentPath);
+    drawMazeInstructions();
+    return;
+  }
+  
   // If game over, only render scene but don't update
   if (isGameOver) {
     const scene = player.getScene(boundaries);
@@ -619,6 +819,21 @@ function draw() {
         detectionTimer = 0;
         isGameOver = true;
       }
+      
+      // Check if player reached critical alert level and hasn't used path regen yet
+      if (detectionTimer <= CRITICAL_ALERT_THRESHOLD && !pathRegenerated) {
+        // Regenerate path as emergency help
+        pathRegenerated = true;
+        showPath = true;
+        pathRevealTime = performance.now();
+        currentPath = findMazePath(
+          ActiveMap.mazeData,
+          ActiveMap.startZone,
+          player.pos,
+          ActiveMap.goalZone
+        );
+        // Don't log to console - keep it subtle
+      }
     } else {
       // Track time since last detection
       timeSinceLastDetection += realDeltaSeconds;
@@ -636,43 +851,27 @@ function draw() {
 
   // Update path if showing (recalculate based on current player position)
   if (showPath && ActiveMap.mazeData) {
-    currentPath = findMazePath(
-      ActiveMap.mazeData,
-      ActiveMap.startZone,
-      player.pos,
-      ActiveMap.goalZone
-    );
+    // Check if 3 seconds have passed
+    if (performance.now() - pathRevealTime >= PATH_DISPLAY_DURATION) {
+      showPath = false;
+      currentPath = null;
+      console.log('Path reveal expired');
+    } else {
+      currentPath = findMazePath(
+        ActiveMap.mazeData,
+        ActiveMap.startZone,
+        player.pos,
+        ActiveMap.goalZone
+      );
+    }
   }
   
   drawMinimap(main_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, currentPath);
 
   drawFPS(main_canvas.width, main_canvas.height, main_ctx);
   
-  // Draw current map name and controls hint
-  if (!showMapSelector) {
-    main_ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    main_ctx.font = `${Math.floor(main_canvas.height * 0.02)}px Arial`;
-    main_ctx.textAlign = 'left';
-    main_ctx.textBaseline = 'top';
-    main_ctx.fillText(`Map: ${ActiveMap.name}`, 10, 10);
-    main_ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    main_ctx.fillText('M: map select | R: reset | N: noclip | P: show path', 10, 10 + main_canvas.height * 0.025);
-    
-    // Draw noclip indicator if enabled
-    if (noclipEnabled) {
-      main_ctx.fillStyle = 'rgba(255, 150, 50, 0.9)';
-      main_ctx.font = `bold ${Math.floor(main_canvas.height * 0.025)}px Arial`;
-      main_ctx.fillText('NOCLIP', 10, 10 + main_canvas.height * 0.055);
-    }
-    
-    // Draw path indicator if enabled
-    if (showPath) {
-      main_ctx.fillStyle = 'rgba(255, 200, 50, 0.9)';
-      main_ctx.font = `bold ${Math.floor(main_canvas.height * 0.025)}px Arial`;
-      const pathX = noclipEnabled ? 100 : 10;
-      main_ctx.fillText('PATH', pathX, 10 + main_canvas.height * 0.055);
-    }
-  }
+  // Draw path expiry timer (when path is active)
+  drawPathExpiryTimer();
   
   // Draw detection alert at bottom center
   drawDetectionAlert();

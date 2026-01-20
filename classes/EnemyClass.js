@@ -311,8 +311,8 @@ class EnemyClass {
     const crouchMultiplier = player.isCrouching ? 0.75 : 1.0;
     // Jumping recently increases detection range by 1.2x (player is more visible)
     const jumpMultiplier = (player.hasRecentlyJumped && player.hasRecentlyJumped()) ? 1.2 : 1.0;
-    // Sprinting decreases detection range to 80% but increases FOV (harder to focus on fast target)
-    const sprintRangeMultiplier = player.isSprinting ? 0.8 : 1.0;
+    // Sprinting increases both detection range and FOV (player is more visible and makes more noise)
+    const sprintRangeMultiplier = player.isSprinting ? 1.2 : 1.0;
     const sprintFovMultiplier = player.isSprinting ? 1.3 : 1.0;
     
     const effectiveMaxVisibilityDist = this.visibilityDistance * crouchMultiplier * jumpMultiplier * sprintRangeMultiplier;

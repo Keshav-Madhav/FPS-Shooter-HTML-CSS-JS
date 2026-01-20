@@ -202,14 +202,14 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxCon
   // Match the detection logic from EnemyClass.detectPlayer():
   // - Crouching reduces detection range to 75% (not FOV angle)
   // - Jumping recently increases detection range by 1.2x
-  // - Sprinting decreases range to 80% but increases FOV by 1.3x
+  // - Sprinting increases both range and FOV (player is more visible and makes more noise)
   const playerCrouching = player ? player.isCrouching : false;
   const playerRecentlyJumped = player && player.hasRecentlyJumped ? player.hasRecentlyJumped() : false;
   const playerSprinting = player ? player.isSprinting : false;
   
   const crouchMultiplier = playerCrouching ? 0.75 : 1.0;
   const jumpMultiplier = playerRecentlyJumped ? 1.2 : 1.0;
-  const sprintRangeMultiplier = playerSprinting ? 0.8 : 1.0;
+  const sprintRangeMultiplier = playerSprinting ? 1.2 : 1.0;
   const sprintFovMultiplier = playerSprinting ? 1.3 : 1.0;
   
   // FOV angle increases when player is sprinting (matches EnemyClass)
@@ -509,7 +509,7 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
   const playerSprinting = user.isSprinting;
   const crouchMultiplier = playerCrouching ? 0.75 : 1.0;
   const jumpMultiplier = playerRecentlyJumped ? 1.2 : 1.0;
-  const sprintRangeMultiplier = playerSprinting ? 0.8 : 1.0;
+  const sprintRangeMultiplier = playerSprinting ? 1.2 : 1.0;
   const combinedMultiplier = crouchMultiplier * jumpMultiplier * sprintRangeMultiplier;
 
   // Draw enemy FOV cones - include enemies whose cone could reach the minimap area
