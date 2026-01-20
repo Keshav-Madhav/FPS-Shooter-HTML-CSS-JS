@@ -1,6 +1,8 @@
 import Boundaries from "../classes/BoundariesClass.js";
 import GameMap from "../classes/GameMapClass.js";
+import StartZone from "../classes/StartZoneClass.js";
 import { createCurvedWall } from "../utils/WallGenerators.js";
+import { ZoneConfig } from "../config/index.js";
 
 /**
  * Creates a showcase/test map demonstrating all wall types and features
@@ -791,6 +793,14 @@ function createShowcaseMap(textures, name) {
   const showcaseMap = new GameMap(name, mapWidth, mapHeight, spawnLocation);
   showcaseMap.addBoundaries(boundaries);
   showcaseMap.userViewDirection = 0;
+  
+  // Set start zone at spawn
+  showcaseMap.setStartZone(new StartZone({
+    x: spawnLocation.x,
+    y: spawnLocation.y,
+    radius: ZoneConfig.defaultRadius,
+    spawnDirection: 0 // Facing right
+  }));
   
   console.log(`Showcase map created: ${boundaries.length} walls with various features (${mapWidth}x${mapHeight})`);
   

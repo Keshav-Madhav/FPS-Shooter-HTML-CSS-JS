@@ -1,5 +1,7 @@
 import Boundaries from "./BoundariesClass.js";
 import EnemyClass from "./EnemyClass.js";
+import StartZone from "./StartZoneClass.js";
+import GoalZone from "./GoalZoneClass.js";
 
 /**
  * @typedef {Object} Size
@@ -11,6 +13,13 @@ import EnemyClass from "./EnemyClass.js";
  * @typedef {Object} Location
  * @property {number} x - The x coordinate
  * @property {number} y - The y coordinate
+ */
+
+/**
+ * @typedef {Object} ZoneData
+ * @property {number} x - Center x coordinate
+ * @property {number} y - Center y coordinate
+ * @property {number} radius - Zone radius
  */
 
 /**
@@ -39,11 +48,17 @@ class GameMap {
     this.boundaries = [];
     this.enemies = [];
     
-    // Goal zone (optional - for maze completion)
+    /** @type {StartZone|ZoneData|null} */
+    this.startZone = null;
+    
+    /** @type {GoalZone|ZoneData|null} */
     this.goalZone = null;
     
     // Custom minimap settings (null = use defaults)
     this.minimapSettings = null;
+    
+    // Maze-specific data (null for non-maze maps)
+    this.mazeData = null;
   }
   
   /**
@@ -57,11 +72,45 @@ class GameMap {
   }
   
   /**
+   * Set the start zone for the map
+   * @param {ZoneData|StartZone} zone - The start zone with x, y, radius (or StartZone instance)
+   */
+  setStartZone(zone) {
+    if (zone instanceof StartZone) {
+      this.startZone = zone;
+    } else {
+      this.startZone = new StartZone(zone.x, zone.y, zone.radius, zone.spawnDirection);
+    }
+    // Update spawn location to match zone center
+    this.userSpawnLocation = { x: zone.x, y: zone.y };
+  }
+  
+  /**
    * Set the goal zone for the map
-   * @param {Object} zone - The goal zone with x, y, radius
+   * @param {ZoneData|GoalZone} zone - The goal zone with x, y, radius (or GoalZone instance)
    */
   setGoalZone(zone) {
-    this.goalZone = zone;
+    if (zone instanceof GoalZone) {
+      this.goalZone = zone;
+    } else {
+      this.goalZone = new GoalZone(zone.x, zone.y, zone.radius, zone.onReached);
+    }
+  }
+  
+  /**
+   * Check if a position is within the start zone
+   * @param {number} x - X coordinate to check
+   * @param {number} y - Y coordinate to check
+   * @returns {boolean} True if position is in start zone
+   */
+  isInStartZone(x, y) {
+    if (!this.startZone) return false;
+    if (this.startZone instanceof StartZone) {
+      return this.startZone.containsPoint(x, y);
+    }
+    const dx = x - this.startZone.x;
+    const dy = y - this.startZone.y;
+    return (dx * dx + dy * dy) <= (this.startZone.radius * this.startZone.radius);
   }
   
   /**
@@ -72,6 +121,9 @@ class GameMap {
    */
   isInGoalZone(x, y) {
     if (!this.goalZone) return false;
+    if (this.goalZone instanceof GoalZone) {
+      return this.goalZone.containsPoint(x, y);
+    }
     const dx = x - this.goalZone.x;
     const dy = y - this.goalZone.y;
     return (dx * dx + dy * dy) <= (this.goalZone.radius * this.goalZone.radius);

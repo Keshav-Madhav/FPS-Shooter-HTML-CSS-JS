@@ -2,7 +2,10 @@ import Boundaries from "../classes/BoundariesClass.js";
 import EnemyClass from "../classes/EnemyClass.js";
 import GameMap from "../classes/GameMapClass.js";
 import Textures from "../classes/TexturesClass.js";
+import StartZone from "../classes/StartZoneClass.js";
+import GoalZone from "../classes/GoalZoneClass.js";
 import { createCurvedWall } from "../utils/WallGenerators.js";
+import { MazeConfig, ZoneConfig } from "../config/index.js";
 
 /**
  * Maze cell representation
@@ -1016,16 +1019,18 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
  * @returns {GameMap} The generated maze map
  */
 function createMazeMap(textures, name, options = {}) {
-  const cols = options.cols || 15;
-  const rows = options.rows || 15;
-  const cellSize = options.cellSize || 120;
-  const wallThickness = options.wallThickness || 20;
-  const curveChance = options.curveChance !== undefined ? options.curveChance : 1.0;
-  const loopChance = options.loopChance !== undefined ? options.loopChance : 0.15;
-  const roomCount = options.roomCount !== undefined ? options.roomCount : 3;
-  const roomMinSize = options.roomMinSize || 2;
-  const roomMaxSize = options.roomMaxSize || 4;
-  const enemyCount = options.enemyCount !== undefined ? options.enemyCount : 8;
+  // Merge options with defaults from config
+  const defaults = MazeConfig.defaults;
+  const cols = options.cols || defaults.cols;
+  const rows = options.rows || defaults.rows;
+  const cellSize = options.cellSize || defaults.cellSize;
+  const wallThickness = options.wallThickness || defaults.wallThickness;
+  const curveChance = options.curveChance !== undefined ? options.curveChance : defaults.curveChance;
+  const loopChance = options.loopChance !== undefined ? options.loopChance : defaults.loopChance;
+  const roomCount = options.roomCount !== undefined ? options.roomCount : defaults.roomCount;
+  const roomMinSize = options.roomMinSize || defaults.roomMinSize;
+  const roomMaxSize = options.roomMaxSize || defaults.roomMaxSize;
+  const enemyCount = options.enemyCount !== undefined ? options.enemyCount : defaults.enemyCount;
   
   const wallTexture = textures.getTexture("wall");
   const curveTexture = wallTexture;
@@ -1084,22 +1089,19 @@ function createMazeMap(textures, name, options = {}) {
   // Set up start zone (top-left cell) and goal zone (bottom-right cell)
   const halfWall = wallThickness / 2;
   const corridorWidth = cellSize - wallThickness;
+  const zoneRadius = corridorWidth * 0.4;
   
-  // Start zone in center of first cell
-  mazeMap.startZone = {
-    x: cellSize * 0.5,
-    y: cellSize * 0.5,
-    radius: corridorWidth * 0.4
-  };
+  // Start zone in center of first cell - using StartZone class
+  const startX = cellSize * 0.5;
+  const startY = cellSize * 0.5;
+  mazeMap.setStartZone(new StartZone({ x: startX, y: startY, radius: zoneRadius, spawnDirection: 135 })); // Face toward center
   
-  // Goal zone in center of last cell (bottom-right corner)
+  // Goal zone in center of last cell (bottom-right corner) - using GoalZone class
   const goalX = (cols - 1) * cellSize + cellSize * 0.5;
   const goalY = (rows - 1) * cellSize + cellSize * 0.5;
-  mazeMap.setGoalZone({
-    x: goalX,
-    y: goalY,
-    radius: corridorWidth * 0.4
-  });
+  mazeMap.setGoalZone(new GoalZone({ x: goalX, y: goalY, radius: zoneRadius, onReached: () => {
+    console.log('Maze completed!');
+  }}));
   
   // Store maze data for pathfinding
   mazeMap.mazeData = {

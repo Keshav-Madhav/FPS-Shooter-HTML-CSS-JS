@@ -2,7 +2,10 @@ import Boundaries from "../classes/BoundariesClass.js";
 import EnemyClass from "../classes/EnemyClass.js";
 import GameMap from "../classes/GameMapClass.js";
 import Textures from "../classes/TexturesClass.js";
+import StartZone from "../classes/StartZoneClass.js";
+import GoalZone from "../classes/GoalZoneClass.js";
 import { createCircle, createCorridor, createBoundaryPath, createCurvedWall } from "../utils/WallGenerators.js";
+import { ZoneConfig } from "../config/index.js";
 
 /**
  * Creates a test map with various rooms and corridors for testing purposes.
@@ -265,6 +268,22 @@ function createTestMap(textures, name) {
   const testMap = new GameMap(name, mapWidth, mapHeight, { x: mapWidth / 6 - 30, y: mapHeight / 4 + 20 });
   testMap.addBoundaries(boundaries);
   testMap.addEnemies(enemies);
+  
+  // Set start zone at spawn location
+  testMap.setStartZone(new StartZone({
+    x: mapWidth / 6 - 30,
+    y: mapHeight / 4 + 20,
+    radius: ZoneConfig.defaultRadius,
+    spawnDirection: 90 // Facing right
+  }));
+  
+  // Set goal zone at the east circular room
+  testMap.setGoalZone(new GoalZone({
+    x: (mapWidth * 3) / 4.5 + 197,
+    y: mapHeight / 2 + 150,
+    radius: ZoneConfig.defaultRadius,
+    onReached: () => console.log('Test map goal reached!')
+  }));
 
   return testMap;
 }

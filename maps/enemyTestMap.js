@@ -1,6 +1,8 @@
 import Boundaries from "../classes/BoundariesClass.js";
 import EnemyClass from "../classes/EnemyClass.js";
 import GameMap from "../classes/GameMapClass.js";
+import StartZone from "../classes/StartZoneClass.js";
+import { ZoneConfig } from "../config/index.js";
 
 /**
  * Creates an enemy testing map with various enemy configurations
@@ -635,6 +637,14 @@ function createEnemyTestMap(textures, name) {
   enemyTestMap.addBoundaries(boundaries);
   enemyTestMap.addEnemies(enemies);
   enemyTestMap.userViewDirection = 270; // Face left
+  
+  // Set start zone at spawn
+  enemyTestMap.setStartZone(new StartZone(
+    spawnLocation.x,
+    spawnLocation.y,
+    ZoneConfig.defaultRadius * 1.5, // Larger safe zone for testing
+    270 // Facing left
+  ));
   
   // Set minimap for good overview
   enemyTestMap.setMinimapSettings({
