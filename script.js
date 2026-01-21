@@ -15,7 +15,8 @@ import { InputConfig, MinimapConfig, DetectionConfig } from './config/index.js';
 import { 
   DetectionAlert, 
   ProgressBar, 
-  GameOverScreen, 
+  GameOverScreen,
+  WinScreen,
   InstructionsPanel,
   MapSelector 
 } from './ui/index.js';
@@ -78,6 +79,7 @@ const detectionTimer = new ProgressBar({
   showValue: true
 });
 const gameOverScreen = new GameOverScreen();
+const winScreen = new WinScreen();
 const mapSelector = new MapSelector();
 
 // Maze-specific instructions panel
@@ -111,7 +113,11 @@ const gameState = new GameStateManager();
 
 // Set up game state callbacks
 gameState.onGameOver = () => {
-  gameOverScreen.show();
+  gameOverScreen.show(gameState.scoreBreakdown);
+};
+
+gameState.onWin = () => {
+  winScreen.show(gameState.scoreBreakdown);
 };
 
 gameState.onCriticalAlert = () => {
@@ -138,6 +144,7 @@ const inputHandler = new InputHandler(main_canvas, {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         gameState.dismissInstructions();
+        gameState.startTimer(); // Start the scoring timer
         mazeInstructions.dismiss();
         return true;
       }
@@ -270,7 +277,13 @@ function setActiveMap(maps, mapName) {
   
   // Reset UI
   gameOverScreen.hide();
+  winScreen.hide();
   detectionAlert.setDetected(false);
+  
+  // Reset goal zone
+  if (ActiveMap.goalZone) {
+    ActiveMap.goalZone.reset();
+  }
 
   // Apply minimap settings
   const settings = ActiveMap.minimapSettings || MinimapConfig.default;
@@ -304,6 +317,12 @@ function resetGame() {
   gameState.reset(isMazeMap);
   
   gameOverScreen.hide();
+  winScreen.hide();
+  
+  // Reset goal zone
+  if (ActiveMap.goalZone) {
+    ActiveMap.goalZone.reset();
+  }
   
   if (isMazeMap) {
     mazeInstructions.show();
@@ -465,6 +484,16 @@ function draw() {
     return;
   }
 
+  if (gameState.isWin) {
+    // Render scene but don't update
+    const scene = player.getScene(boundaries);
+    render3D(scene, player.eyeHeight);
+    drawMinimap(main_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null);
+    
+    winScreen.draw(main_ctx, main_canvas.width, main_canvas.height);
+    return;
+  }
+
   // Update animated boundaries
   for (let i = 0; i < boundaries.length; i++) {
     const boundary = boundaries[i];
@@ -477,6 +506,13 @@ function draw() {
   const scene = player.getScene(boundaries);
   render3D(scene, player.eyeHeight);
   player.update(deltaTime, boundaries);
+
+  // Check if player reached goal zone
+  if (isMazeMap && ActiveMap.goalZone && !gameState.isWin) {
+    if (ActiveMap.goalZone.checkReached(player.pos.x, player.pos.y)) {
+      gameState.triggerWin();
+    }
+  }
 
   // Track detection
   let isPlayerDetected = false;

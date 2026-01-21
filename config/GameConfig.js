@@ -160,7 +160,7 @@ export const GameLoopConfig = {
 // BACKGROUND CONFIGURATION
 // ===========================================
 export const BackgroundConfig = {
-  parallaxStrength: 0.2,
+  parallaxStrength: 0.1,
   sky: {
     startLuminosity: 55,
     endLuminosity: 20,
@@ -214,15 +214,15 @@ export const ZoneConfig = {
 // ===========================================
 export const MazeConfig = {
   defaults: {
-    cols: 20,
-    rows: 20,
-    cellSize: 90,
-    wallThickness: 15,
+    cols: 28,
+    rows: 28,
+    cellSize: 100,
+    wallThickness: 18,
     curveChance: 1.0,
     loopChance: 0.1,
-    roomCount: 2,
+    roomCount: 3,
     roomMinSize: 2,
-    roomMaxSize: 4,
-    enemyCount: 15
+    roomMaxSize: 5,
+    enemyCount: 20
   }
 };
