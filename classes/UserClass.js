@@ -12,7 +12,8 @@ import { DEG_TO_RAD, HALF_PI, TWO_PI, fastSin, fastCos, normalizeAngle } from '.
 
 // Collision constants
 const PLAYER_RADIUS = 12; // Player collision radius
-const COLLISION_MARGIN = 0.5; // Small margin to prevent floating point issues
+const COLLISION_MARGIN = 1.0; // Margin to prevent floating point issues
+const MAX_STEP_DISTANCE = 8; // Maximum distance per collision step (prevents phasing through walls)
 
 // Vertical movement constants
 const BASE_EYE_HEIGHT = 0; // Normal standing eye level (0 = center of screen)
@@ -311,8 +312,8 @@ class Player {
   _resolveStaticCollisions() {
     if (!this.collisionEnabled || this._boundaries.length === 0) return;
     
-    // Iterative collision resolution (max 5 iterations for moving walls)
-    for (let iter = 0; iter < 5; iter++) {
+    // Iterative collision resolution (max 8 iterations for moving walls)
+    for (let iter = 0; iter < 8; iter++) {
       let totalPushX = 0;
       let totalPushY = 0;
       let collisionCount = 0;
@@ -394,7 +395,8 @@ class Player {
 
   /**
    * Resolves collision with walls and returns the final position
-   * Uses iterative collision response for smooth wall sliding
+   * Uses iterative collision response with movement subdivision for smooth wall sliding
+   * Movement is subdivided to prevent phasing through thin walls at high speeds
    * @param {number} startX - Starting X position
    * @param {number} startY - Starting Y position
    * @param {number} dx - Movement delta X
@@ -408,11 +410,46 @@ class Player {
       return { x: startX + dx, y: startY + dy };
     }
 
+    // Calculate total movement distance
+    const totalDist = Math.sqrt(dx * dx + dy * dy);
+    
+    // If movement is small enough, do single-step collision
+    if (totalDist <= MAX_STEP_DISTANCE) {
+      return this._resolveSingleStep(startX, startY, dx, dy);
+    }
+    
+    // Subdivide movement into smaller steps to prevent wall phasing
+    const numSteps = Math.ceil(totalDist / MAX_STEP_DISTANCE);
+    const stepDx = dx / numSteps;
+    const stepDy = dy / numSteps;
+    
+    let currentX = startX;
+    let currentY = startY;
+    
+    for (let step = 0; step < numSteps; step++) {
+      const result = this._resolveSingleStep(currentX, currentY, stepDx, stepDy);
+      currentX = result.x;
+      currentY = result.y;
+    }
+    
+    return { x: currentX, y: currentY };
+  }
+
+  /**
+   * Resolves collision for a single movement step
+   * @param {number} startX - Starting X position
+   * @param {number} startY - Starting Y position
+   * @param {number} dx - Movement delta X
+   * @param {number} dy - Movement delta Y
+   * @returns {{x: number, y: number}} The resolved position
+   * @private
+   */
+  _resolveSingleStep(startX, startY, dx, dy) {
     let newX = startX + dx;
     let newY = startY + dy;
     
-    // Iterative collision resolution (max 3 iterations for complex corners)
-    for (let iter = 0; iter < 3; iter++) {
+    // Iterative collision resolution (max 5 iterations for complex corners)
+    for (let iter = 0; iter < 5; iter++) {
       let totalPushX = 0;
       let totalPushY = 0;
       let collisionCount = 0;
@@ -486,7 +523,8 @@ class Player {
     if (distSq < minDist * minDist && distSq > 0.0001) {
       // Collision detected - calculate push vector
       const dist = Math.sqrt(distSq);
-      const penetration = minDist - dist;
+      // Add extra push (1.05x) to ensure player is fully outside
+      const penetration = (minDist - dist) * 1.05;
       
       // Normalize and scale by penetration
       const pushX = (distX / dist) * penetration;
@@ -531,7 +569,8 @@ class Player {
 
     if (distToArc < minDist) {
       // Collision detected - calculate push vector
-      const penetration = minDist - distToArc;
+      // Add extra push (1.05x) to ensure player is fully outside
+      const penetration = (minDist - distToArc) * 1.05;
       
       // Normalize direction from center
       const normX = dx / distFromCenter;
