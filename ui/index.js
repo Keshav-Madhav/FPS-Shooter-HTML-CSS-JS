@@ -9,3 +9,4 @@ export { default as GameOverScreen } from './GameOverScreen.js';
 export { default as WinScreen } from './WinScreen.js';
 export { default as InstructionsPanel } from './InstructionsPanel.js';
 export { default as MapSelector } from './MapSelector.js';
+export { default as SettingsMenu } from './SettingsMenu.js';

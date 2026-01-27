@@ -1,4 +1,4 @@
-import { InputConfig } from '../config/GameConfig.js';
+import { ControlsConfig } from '../config/ControlsConfig.js';
 
 /**
  * InputHandler - Centralized input management
@@ -31,6 +31,10 @@ class InputHandler {
     // Pointer lock state
     this.isPointerLocked = false;
     
+    // Listen for config changes
+    this._onConfigChange = this._onConfigChange.bind(this);
+    ControlsConfig.addListener(this._onConfigChange);
+    
     // Bind methods
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
@@ -39,6 +43,15 @@ class InputHandler {
     this._onClick = this._onClick.bind(this);
     
     this._setupListeners();
+  }
+
+  /**
+   * Called when controls config changes
+   * @private
+   */
+  _onConfigChange() {
+    // Config has been updated, no need to do anything special
+    // as we read from ControlsConfig directly
   }
 
   /**
@@ -65,6 +78,8 @@ class InputHandler {
     document.removeEventListener('pointerlockchange', this._onPointerLockChange);
     document.removeEventListener('mozpointerlockchange', this._onPointerLockChange);
     document.removeEventListener('mousemove', this._onMouseMove);
+    
+    ControlsConfig.removeListener(this._onConfigChange);
   }
 
   /**
@@ -96,15 +111,14 @@ class InputHandler {
   }
 
   /**
-   * Checks if a key matches a binding
+   * Checks if a key matches a binding (case-insensitive)
    * @param {string} key - Pressed key
    * @param {string} action - Action to check
    * @returns {boolean} True if key matches action
    * @private
    */
   _matchesKey(key, action) {
-    const keys = InputConfig.keys[action];
-    return keys && keys.includes(key);
+    return ControlsConfig.matchesKey(key, action);
   }
 
   /**

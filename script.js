@@ -9,7 +9,7 @@
 import { GameLoop, GameStateManager, InputHandler } from './core/index.js';
 
 // Configuration
-import { InputConfig, MinimapConfig, DetectionConfig } from './config/index.js';
+import { MinimapConfig, DetectionConfig, ControlsConfig } from './config/index.js';
 
 // UI Components
 import { 
@@ -18,7 +18,8 @@ import {
   GameOverScreen,
   WinScreen,
   InstructionsPanel,
-  MapSelector 
+  MapSelector,
+  SettingsMenu
 } from './ui/index.js';
 
 // Game classes
@@ -105,6 +106,30 @@ const mazeInstructions = new InstructionsPanel({
   dismissPrompt: 'Press ENTER or SPACE to start'
 });
 
+// Settings menu
+const settingsMenu = new SettingsMenu();
+let settingsMenuClosing = false;
+
+settingsMenu.onClose = () => {
+  settingsMenuClosing = true;
+  setTimeout(() => { settingsMenuClosing = false; }, 100);
+};
+
+// Open settings when pointer lock is released (handles Escape when locked)
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === null && !settingsMenu.visible && !mapSelector.visible && !settingsMenuClosing) {
+    settingsMenu.show();
+  }
+});
+
+// Open settings with Escape when pointer lock is NOT active
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !document.pointerLockElement && !settingsMenu.visible && !mapSelector.visible) {
+    e.preventDefault();
+    settingsMenu.show();
+  }
+});
+
 // ===========================================
 // INITIALIZE CORE SYSTEMS
 // ===========================================
@@ -138,8 +163,69 @@ gameState.onCriticalAlert = () => {
 // ===========================================
 
 const inputHandler = new InputHandler(main_canvas, {
-  // Blocking handler for instructions
+  // Blocking handler for instructions and settings menu
   onKeyDownBlocking: (e) => {
+    // Handle settings menu first (highest priority)
+    if (settingsMenu.visible) {
+      const key = e.key;
+      
+      // Handle key rebinding
+      if (settingsMenu.isRebinding) {
+        e.preventDefault();
+        settingsMenu.handleKeyForRebind(key);
+        return true;
+      }
+      
+      // Navigation and actions in settings menu
+      if (key === 'Escape') {
+        e.preventDefault();
+        settingsMenu.hide();
+        return true;
+      }
+      if (key === 'ArrowUp') {
+        e.preventDefault();
+        settingsMenu.selectPrevious();
+        return true;
+      }
+      if (key === 'ArrowDown') {
+        e.preventDefault();
+        settingsMenu.selectNext();
+        return true;
+      }
+      if (key === 'ArrowLeft') {
+        e.preventDefault();
+        settingsMenu.adjustSensitivity(-1);
+        return true;
+      }
+      if (key === 'ArrowRight') {
+        e.preventDefault();
+        settingsMenu.adjustSensitivity(1);
+        return true;
+      }
+      if (key === 'Enter') {
+        e.preventDefault();
+        settingsMenu.confirm();
+        return true;
+      }
+      if (key === 'Tab') {
+        e.preventDefault();
+        settingsMenu.switchTab(settingsMenu.currentTab === 'controls' ? 'sensitivity' : 'controls');
+        return true;
+      }
+      if (key === 'Delete' || key === 'Backspace') {
+        e.preventDefault();
+        settingsMenu.clearBinding();
+        return true;
+      }
+      if (key === 'r' || key === 'R') {
+        e.preventDefault();
+        settingsMenu.resetToDefaults();
+        return true;
+      }
+      
+      return true;
+    }
+    
     if (gameState.showInstructions && ActiveMap.mazeData) {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -155,7 +241,8 @@ const inputHandler = new InputHandler(main_canvas, {
 
   onMouseMove: (movementX, movementY) => {
     if (gameState.showInstructions && ActiveMap.mazeData) return;
-    player.updateViewDirection(player.viewDirection + (movementX * InputConfig.mouseSensitivity));
+    if (settingsMenu.visible) return;
+    player.updateViewDirection(player.viewDirection + (movementX * ControlsConfig.getSensitivity()));
   },
 
   onJump: () => player.jump(),
@@ -189,6 +276,7 @@ const inputHandler = new InputHandler(main_canvas, {
   },
 
   onMapSelectorToggle: () => {
+    if (settingsMenu.visible) return; // Don't toggle map selector when settings is open
     mapSelector.toggle();
     if (mapSelector.visible) {
       document.exitPointerLock();
@@ -222,7 +310,11 @@ const inputHandler = new InputHandler(main_canvas, {
   },
 
   onCancel: () => {
-    mapSelector.hide();
+    if (settingsMenu.visible) {
+      settingsMenu.hide();
+    } else {
+      mapSelector.hide();
+    }
   }
 });
 

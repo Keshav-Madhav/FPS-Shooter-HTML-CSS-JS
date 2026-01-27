@@ -3,3 +3,4 @@
  */
 
 export * from './GameConfig.js';
+export { ControlsConfig } from './ControlsConfig.js';
