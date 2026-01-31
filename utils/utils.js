@@ -268,8 +268,78 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxCon
 }
 
 /**
+ * Draws fog of war overlay on the minimap
+ * Optimized for small cell sizes using batched drawing
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {number} centerX - Minimap center X
+ * @param {number} centerY - Minimap center Y
+ * @param {number} radius - Minimap radius
+ * @param {number} invScale - Inverse scale
+ * @param {Object} user - Player object
+ * @param {Object} fogOfWar - Fog of war tracker
+ * @param {boolean} rotateWithPlayer - Whether minimap rotates with player
+ * @param {number} rotationAngle - Rotation angle in radians
+ */
+function drawFogOverlay(ctx, centerX, centerY, radius, invScale, user, fogOfWar, rotateWithPlayer, rotationAngle) {
+  const cosR = Math.cos(rotationAngle);
+  const sinR = Math.sin(rotationAngle);
+  const cellSize = fogOfWar.cellSize;
+  const checkRadius = radius + cellSize;
+  const checkRadiusSq = checkRadius * checkRadius;
+  const playerCell = fogOfWar.worldToCell(user.pos.x, user.pos.y);
+  const cellsToCheck = Math.ceil(checkRadius / cellSize) + 1;
+  
+  // Draw radius slightly larger for overlap
+  const drawRadius = cellSize * 0.65;
+  
+  // Batch all fog circles into a single path
+  ctx.fillStyle = 'rgba(15, 18, 25, 0.9)';
+  ctx.beginPath();
+  
+  for (let dc = -cellsToCheck; dc <= cellsToCheck; dc++) {
+    for (let dr = -cellsToCheck; dr <= cellsToCheck; dr++) {
+      const col = playerCell.col + dc;
+      const row = playerCell.row + dr;
+      
+      // Skip explored cells
+      if (fogOfWar.exploredCells.has(fogOfWar.getCellKey(col, row))) continue;
+      
+      // Calculate world position
+      const worldX = col * cellSize - fogOfWar.mapWidth + cellSize * 0.5;
+      const worldY = row * cellSize - fogOfWar.mapHeight + cellSize * 0.5;
+      
+      // Distance check
+      const dx = worldX - user.pos.x;
+      const dy = worldY - user.pos.y;
+      if (dx * dx + dy * dy > checkRadiusSq) continue;
+      
+      // Convert to minimap position
+      let posX, posY;
+      if (rotateWithPlayer) {
+        posX = dx * cosR - dy * sinR + centerX;
+        posY = dx * sinR + dy * cosR + centerY;
+      } else {
+        posX = dx + centerX;
+        posY = dy + centerY;
+      }
+      
+      // Add to batched path
+      ctx.moveTo(posX + drawRadius, posY);
+      ctx.arc(posX, posY, drawRadius, 0, Math.PI * 2);
+    }
+  }
+  
+  // Fill all fog circles at once
+  ctx.fill();
+  
+  // Skip edge gradients for very small cells (minimal visual impact, expensive)
+  if (cellSize < 10) return;
+}
+
+/**
  * Draws a circular minimap on the main canvas
  * Optimized: only enemies within minimap radius get ray-traced FOV cones
+ * Supports fog of war to hide unexplored areas
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {Array} boundaries - Array of boundary objects
  * @param {Object} user - Player object
@@ -277,8 +347,9 @@ function drawEnemyFOVCone(ctx, enemy, offsetX, offsetY, nearbyBoundaries, maxCon
  * @param {Object} [goalZone] - Optional goal zone {x, y, radius}
  * @param {Object} [startZone] - Optional start zone {x, y, radius}
  * @param {Array} [pathPoints] - Optional array of {x, y} points to draw as a path
+ * @param {Object} [fogOfWar] - Optional fog of war tracker
  */
-function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone = null, pathPoints = null) {
+function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone = null, pathPoints = null, fogOfWar = null) {
   const scale = miniMapSettings.scale;
   const invScale = 1 / scale;
   const centerX = miniMapSettings.x * invScale;
@@ -436,14 +507,25 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
     }
   }
 
+  // Draw fog of war overlay FIRST (before walls and player)
+  if (fogOfWar && fogOfWar.enabled) {
+    drawFogOverlay(ctx, centerX, centerY, radius, invScale, user, fogOfWar, rotateWithPlayer, rotationAngle);
+  }
+
   // Draw boundaries (opaque first, then translucent)
-  ctx.lineWidth = invScale;
+  // With fog of war, only draw explored walls
+  ctx.lineWidth = 1.5 * invScale; // Slightly thicker walls for visibility
   
   for (let i = 0; i < boundaries.length; i++) {
     const boundary = boundaries[i];
     
     // Skip sprite boundaries (enemies etc) but draw translucent walls
     if (boundary.isSprite) continue;
+    
+    // Fog of war: skip walls in unexplored areas
+    if (fogOfWar && fogOfWar.enabled && !fogOfWar.isBoundaryExplored(boundary)) {
+      continue;
+    }
     
     // Set color based on wall type
     if (boundary.isTransparent && boundary.color) {
@@ -503,11 +585,18 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
   ctx.closePath();
   ctx.fill();
 
-  // Draw player position dot
-  ctx.fillStyle = 'yellow';
-    ctx.beginPath();
-  ctx.arc(centerX, centerY, 3 * invScale, 0, Math.PI * 2);
+  // Draw player position dot (larger and brighter)
+  ctx.fillStyle = '#ffff00';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 4 * invScale, 0, Math.PI * 2);
   ctx.fill();
+  
+  // Add a glow around player
+  ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+  ctx.lineWidth = 2 * invScale;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 6 * invScale, 0, Math.PI * 2);
+  ctx.stroke();
 
   // Calculate detection multipliers once (matches EnemyClass.detectPlayer logic)
   const playerCrouching = user.isCrouching;
@@ -519,8 +608,17 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
   const combinedMultiplier = crouchMultiplier * jumpMultiplier * sprintRangeMultiplier;
 
   // Draw enemy FOV cones - include enemies whose cone could reach the minimap area
+  // With fog of war, only show enemies the player has seen
   for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
+
+    // Fog of war: check if enemy should be visible
+    if (fogOfWar && fogOfWar.enabled) {
+      const enemyVisible = fogOfWar.isEnemyVisible(enemy, user, boundaries);
+      if (!enemyVisible) {
+        continue;
+      }
+    }
 
     // Distance from player (minimap center) to enemy
     const dx = enemy.pos.x - user.pos.x;

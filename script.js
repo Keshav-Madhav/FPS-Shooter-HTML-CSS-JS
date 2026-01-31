@@ -9,7 +9,7 @@
 import { GameLoop, GameStateManager, InputHandler, RaycastManager } from './core/index.js';
 
 // Configuration
-import { MinimapConfig, DetectionConfig, ControlsConfig } from './config/index.js';
+import { MinimapConfig, DetectionConfig, ControlsConfig, FogOfWarConfig } from './config/index.js';
 
 // UI Components
 import { 
@@ -40,6 +40,7 @@ import { getDeltaTime } from './utils/deltaTime.js';
 import { drawFPS } from './utils/fpsDisplay.js';
 import { render3D } from './utils/render3DFunction.js';
 import { drawBackground, drawMinimap, resizeCanvas } from './utils/utils.js';
+import FogOfWar from './utils/FogOfWar.js';
 
 // ===========================================
 // GAME STATE
@@ -62,6 +63,16 @@ let ActiveMap = null;
 
 /** @type {Textures} */
 const textures = new Textures();
+
+/** @type {FogOfWar} */
+const fogOfWar = new FogOfWar({
+  cellSize: FogOfWarConfig.cellSize,
+  mapWidth: FogOfWarConfig.defaultMapWidth,
+  mapHeight: FogOfWarConfig.defaultMapHeight,
+  enabled: FogOfWarConfig.enabled,
+  rayCount: FogOfWarConfig.rayCount
+});
+fogOfWar.setRevealDistance(FogOfWarConfig.revealDistance);
 
 // Noclip mode state
 let noclipEnabled = false;
@@ -332,7 +343,7 @@ let lastFrameTime = performance.now();
 // ===========================================
 
 window.addEventListener('resize', () => {
-  resizeCanvas({ canvasArray: [main_canvas, background_canvas], ratio: 16 / 9 });
+  resizeCanvas({ canvasArray: [main_canvas, background_canvas, minimap_canvas], ratio: 16 / 9 });
   drawBackground(background_ctx, background_canvas.height, background_canvas.width);
   
   // Update camera's canvas height for precomputed height multipliers
@@ -357,6 +368,7 @@ function drawOptimizationStats(ctx, width, height) {
   if (!showOptimizationStats || !player) return;
   
   const gridStats = player.camera.spatialGrid.getStats();
+  const fogStats = fogOfWar.getStats();
   
   ctx.save();
   ctx.font = '12px monospace';
@@ -364,7 +376,7 @@ function drawOptimizationStats(ctx, width, height) {
   ctx.textAlign = 'left';
   
   const x = 10;
-  let y = height - 120;
+  let y = height - 160;
   const lineHeight = 14;
   
   ctx.fillText('=== Optimization Stats ===', x, y); y += lineHeight;
@@ -374,6 +386,10 @@ function drawOptimizationStats(ctx, width, height) {
   ctx.fillText(`Max/Cell: ${gridStats.maxBoundariesPerCell}`, x, y); y += lineHeight;
   ctx.fillText(`Memory: ~${gridStats.memoryEstimate}`, x, y); y += lineHeight;
   ctx.fillText(`Ray Count: ${player.camera.rayCount}`, x, y); y += lineHeight;
+  ctx.fillText('--- Fog of War ---', x, y); y += lineHeight;
+  ctx.fillText(`Enabled: ${fogStats.enabled}`, x, y); y += lineHeight;
+  ctx.fillText(`Explored: ${fogStats.percentExplored} (${fogStats.exploredCells} cells)`, x, y); y += lineHeight;
+  ctx.fillText(`Seen Enemies: ${fogStats.seenEnemies}`, x, y); y += lineHeight;
   ctx.fillText('Press O to hide', x, y);
   
   ctx.restore();
@@ -437,6 +453,17 @@ function setActiveMap(maps, mapName) {
   miniMapSettings.x = settings.x ?? MinimapConfig.default.x;
   miniMapSettings.y = settings.y ?? MinimapConfig.default.y;
   
+  // Configure and reset fog of war
+  // Only enable fog of war for maze maps
+  fogOfWar.setEnabled(isMazeMap && FogOfWarConfig.enabled);
+  if (isMazeMap) {
+    // Configure fog of war for maze dimensions
+    const mazeWidth = ActiveMap.mazeData ? ActiveMap.mazeData.cols * ActiveMap.mazeData.cellSize * 2 : 3000;
+    const mazeHeight = ActiveMap.mazeData ? ActiveMap.mazeData.rows * ActiveMap.mazeData.cellSize * 2 : 3000;
+    fogOfWar.configure(mazeWidth, mazeHeight);
+  }
+  fogOfWar.reset();
+  
   // Update map selector
   mapSelector.setActiveMap(maps.indexOf(ActiveMap));
 }
@@ -469,7 +496,9 @@ function resetGame() {
     ActiveMap.goalZone.reset();
   }
   
+  // Reset fog of war for maze maps
   if (isMazeMap) {
+    fogOfWar.reset();
     mazeInstructions.show();
   }
 }
@@ -479,7 +508,7 @@ function resetGame() {
 // ===========================================
 
 function setUpGame() {
-  resizeCanvas({ canvasArray: [main_canvas, background_canvas], ratio: 16 / 9 });
+  resizeCanvas({ canvasArray: [main_canvas, background_canvas, minimap_canvas], ratio: 16 / 9 });
   drawBackground(background_ctx, background_canvas.height, background_canvas.width);
 
   // Add textures
@@ -593,6 +622,7 @@ function drawPathExpiryTimer() {
 
 function draw() {
   main_ctx.clearRect(0, 0, main_canvas.width, main_canvas.height);
+  minimap_ctx.clearRect(0, 0, minimap_canvas.width, minimap_canvas.height);
 
   // Calculate timing
   const currentTime = performance.now();
@@ -618,7 +648,10 @@ function draw() {
     // Render scene but don't update
     const scene = player.getScene(boundaries);
     render3D(scene, player.eyeHeight);
-    drawMinimap(main_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null);
+    // Update fog of war even during instructions so player sees starting area
+    fogOfWar.setBoundaries(boundaries);
+    fogOfWar.updateExploration(player.pos.x, player.pos.y, player.viewDirection, player.camera.fov);
+    drawMinimap(minimap_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null, fogOfWar);
     mazeInstructions.draw(main_ctx, main_canvas.width, main_canvas.height);
     return;
   }
@@ -627,7 +660,7 @@ function draw() {
     // Render scene but don't update
     const scene = player.getScene(boundaries);
     render3D(scene, player.eyeHeight);
-    drawMinimap(main_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null);
+    drawMinimap(minimap_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null, fogOfWar);
     
     detectionTimer.setValue(gameState.detectionTimer);
     detectionTimer.draw(main_ctx, main_canvas.width, main_canvas.height);
@@ -639,7 +672,7 @@ function draw() {
     // Render scene but don't update
     const scene = player.getScene(boundaries);
     render3D(scene, player.eyeHeight);
-    drawMinimap(main_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null);
+    drawMinimap(minimap_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null, fogOfWar);
     
     winScreen.draw(main_ctx, main_canvas.width, main_canvas.height);
     return;
@@ -716,8 +749,14 @@ function draw() {
     gameState.setPath(path);
   }
 
-  // Draw minimap
-  drawMinimap(main_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, gameState.currentPath);
+  // Update fog of war exploration (view-based with wall occlusion)
+  if (isMazeMap) {
+    fogOfWar.setBoundaries(boundaries);
+    fogOfWar.updateExploration(player.pos.x, player.pos.y, player.viewDirection, player.camera.fov);
+  }
+
+  // Draw minimap (on separate canvas for optimization)
+  drawMinimap(minimap_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, gameState.currentPath, fogOfWar);
 
   // Draw FPS
   drawFPS(main_canvas.width, main_canvas.height, main_ctx);

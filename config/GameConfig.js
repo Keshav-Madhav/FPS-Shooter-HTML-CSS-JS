@@ -30,6 +30,27 @@ export const MinimapConfig = {
 };
 
 // ===========================================
+// FOG OF WAR CONFIGURATION
+// ===========================================
+export const FogOfWarConfig = {
+  // Whether fog of war is enabled (only applies to maze maps)
+  enabled: true,
+  
+  // Size of each exploration cell in world units (smaller = tighter fog, 5-15 recommended)
+  cellSize: 5,
+  
+  // Maximum reveal distance in world units
+  revealDistance: 350,
+  
+  // Number of rays to cast within FOV (reduced for performance with small cells)
+  rayCount: 90,
+  
+  // Default map dimensions (overridden per-map)
+  defaultMapWidth: 3000,
+  defaultMapHeight: 3000
+};
+
+// ===========================================
 // PLAYER CONFIGURATION
 // ===========================================
 export const PlayerConfig = {
