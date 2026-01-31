@@ -2,6 +2,7 @@ import Boundaries from './BoundariesClass.js';
 import CameraClass from './CameraClass.js';
 import RayClass from './RayClass.js';
 import { DEG_TO_RAD, RAD_TO_DEG } from '../utils/mathLUT.js';
+import { EnemyConfig, DetectionConfig } from '../config/GameConfig.js';
 
 class EnemyClass {
   /**
@@ -31,9 +32,9 @@ class EnemyClass {
     x,
     y,
     viewDirection = 0,
-    fov = 60,
-    rayCount = 200,
-    visibilityDistance = 300,
+    fov = EnemyConfig.defaultFov,
+    rayCount = EnemyConfig.defaultRayCount,
+    visibilityDistance = EnemyConfig.defaultVisibilityDistance,
     rotationStops = [],
     rotationTime = 1,
     repeatRotation = false,
@@ -267,13 +268,13 @@ class EnemyClass {
     // Normalize angle to 0-1 range (0 = center, 1 = edge)
     const normalizedAngle = Math.min(Math.abs(angleFromCenter) / halfFov, 1);
     
-    // Cone-shaped falloff zones:
-    // 0.0 - 0.2: Full distance (center 20%)
-    // 0.2 - 0.4: Transition from 100% to 40% (20% on each side)
-    // 0.4 - 1.0: Remain at 40% (outer 20% on each side)
-    const fullDistanceThreshold = 0.2;
-    const transitionEnd = 0.4;
-    const minMultiplier = 0.4;
+    // Cone-shaped falloff zones (from config):
+    // 0.0 - fullDistanceThreshold: Full distance (center)
+    // fullDistanceThreshold - transitionEnd: Transition to minMultiplier
+    // transitionEnd - 1.0: Remain at minMultiplier
+    const fullDistanceThreshold = EnemyConfig.fullDistanceThreshold;
+    const transitionEnd = EnemyConfig.transitionEnd;
+    const minMultiplier = EnemyConfig.minMultiplier;
     
     if (normalizedAngle <= fullDistanceThreshold) {
       // Center zone - full distance
@@ -318,10 +319,10 @@ class EnemyClass {
     const effectiveMaxVisibilityDist = this.visibilityDistance * crouchMultiplier * jumpMultiplier * sprintRangeMultiplier;
     const effectiveHalfFov = this._halfFov * sprintFovMultiplier; // FOV increases when player is sprinting
     
-    // Proximity detection distance (15% of main visibility distance, covers full 360°)
+    // Proximity detection distance (covers full 360°)
     // Disabled when crouching (0 distance means no proximity detection)
     // Affected by jump and sprint multipliers
-    const proximityDistance = player.isCrouching ? 0 : this.visibilityDistance * 0.15 * jumpMultiplier * sprintRangeMultiplier;
+    const proximityDistance = player.isCrouching ? 0 : this.visibilityDistance * DetectionConfig.proximityDistanceMultiplier * jumpMultiplier * sprintRangeMultiplier;
 
     // Quick squared distance check against maximum possible distance (avoids sqrt for far objects)
     const distSq = dx * dx + dy * dy;

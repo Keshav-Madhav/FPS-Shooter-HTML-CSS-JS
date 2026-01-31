@@ -5,7 +5,7 @@ import Textures from "../classes/TexturesClass.js";
 import StartZone from "../classes/StartZoneClass.js";
 import GoalZone from "../classes/GoalZoneClass.js";
 import { createCurvedWall } from "../utils/WallGenerators.js";
-import { MazeConfig, ZoneConfig } from "../config/index.js";
+import { MazeConfig, ZoneConfig, EnemyConfig, PlayerConfig } from "../config/index.js";
 
 /**
  * Maze cell representation
@@ -814,8 +814,8 @@ function placeEnemies(grid, cellSize, wallThickness, texture, count, playerSpawn
     return true;
   }
   
-  // Consistent FOV for all maze enemies
-  const MAZE_ENEMY_FOV = 80;
+  // Consistent FOV for all maze enemies (use player FOV for balanced gameplay)
+  const MAZE_ENEMY_FOV = PlayerConfig.baseFov;
   
   /**
    * Creates an enemy at the specified cell with patrol behavior
@@ -1110,6 +1110,26 @@ function createMazeMap(textures, name, options = {}) {
     rows: rows,
     cellSize: cellSize
   };
+  
+  // Add floor zones only for start and goal positions
+  mazeMap.floorZones = [
+    // Start zone - cyan/blue pulsing floor marker
+    {
+      x: startX,
+      y: startY,
+      radius: zoneRadius * 1.2,
+      type: 'start',
+      intensity: 1.0
+    },
+    // Goal zone - green pulsing floor marker
+    {
+      x: goalX,
+      y: goalY,
+      radius: zoneRadius * 1.2,
+      type: 'goal',
+      intensity: 1.0
+    }
+  ];
   
   console.log(`Maze generated: ${cols}x${rows} grid, ${boundaries.length} walls, ${enemies.length} enemies, ${rooms.length} rooms`);
   console.log(`Start zone: (${spawnLocation.x}, ${spawnLocation.y}), Goal zone: (${goalX}, ${goalY})`);

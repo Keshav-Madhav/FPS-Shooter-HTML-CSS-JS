@@ -6,10 +6,11 @@
 
 import SpatialGrid from '../utils/SpatialGrid.js';
 import { DEG_TO_RAD } from '../utils/mathLUT.js';
+import { RenderConfig } from '../config/GameConfig.js';
 
 // Configuration
 const WORKER_PATH = './workers/RaycastWorker.js';
-const MAX_RENDER_DISTANCE = 2000;
+const MAX_RENDER_DISTANCE = RenderConfig.maxRenderDistance;
 const BATCH_SIZE = 4; // SIMD-like batch size
 
 class RaycastManager {

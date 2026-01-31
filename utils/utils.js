@@ -2,6 +2,7 @@ import Boundaries from "../classes/BoundariesClass.js";
 import Player from "../classes/UserClass.js";
 import RayClass from "../classes/RayClass.js";
 import { DEG_TO_RAD, fastSin, fastCos } from "./mathLUT.js";
+import { BackgroundConfig, DetectionConfig, EnemyConfig } from "../config/GameConfig.js";
 
 /**
  * Resizes all canvas elements in the canvasArray to maintain the specified aspect ratio.
@@ -25,8 +26,8 @@ function resizeCanvas({ canvasArray, ratio }) {
   }
 }
 
-// Background parallax strength (reduced for subtler horizon movement)
-const BG_PARALLAX_STRENGTH = 0.2;
+// Background parallax strength (from config)
+const BG_PARALLAX_STRENGTH = BackgroundConfig.parallaxStrength;
 
 /**
  * Draws the background gradient (sky and floor) with optional vertical parallax
@@ -154,13 +155,13 @@ function getEffectiveVisibilityDistance(angleFromCenter, halfFovRad, maxDistance
   // Normalize angle to 0-1 range (0 = center, 1 = edge)
   const normalizedAngle = Math.min(Math.abs(angleFromCenter) / halfFovRad, 1);
   
-  // Cone-shaped falloff zones:
-  // 0.0 - 0.2: Full distance (center 20%)
-  // 0.2 - 0.4: Transition from 100% to 40% (20% on each side)
-  // 0.4 - 1.0: Remain at 40% (outer 20% on each side)
-  const fullDistanceThreshold = 0.2;
-  const transitionEnd = 0.4;
-  const minMultiplier = 0.4;
+  // Cone-shaped falloff zones (from EnemyConfig):
+  // 0.0 - fullDistanceThreshold: Full distance (center)
+  // fullDistanceThreshold - transitionEnd: Transition to minMultiplier
+  // transitionEnd - 1.0: Remain at minMultiplier
+  const fullDistanceThreshold = EnemyConfig.fullDistanceThreshold;
+  const transitionEnd = EnemyConfig.transitionEnd;
+  const minMultiplier = EnemyConfig.minMultiplier;
   
   if (normalizedAngle <= fullDistanceThreshold) {
     // Center zone - full distance
@@ -646,11 +647,11 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
     // Calculate enemy position on minimap (needed for both proximity circle and dot)
     const enemyPos = rotatePoint(enemy.pos.x, enemy.pos.y);
     
-    // Draw 360° proximity detection circle (15% of main visibility distance)
+    // Draw 360° proximity detection circle
     // Only visible when player is NOT crouching (crouching disables proximity detection)
-    // Jumping increases proximity range by 1.2x, sprinting decreases to 80%
+    // Jumping increases proximity range, sprinting decreases it
     if (!playerCrouching) {
-      const proximityDistance = enemy.visibilityDistance * 0.15 * jumpMultiplier * sprintRangeMultiplier;
+      const proximityDistance = enemy.visibilityDistance * DetectionConfig.proximityDistanceMultiplier * jumpMultiplier * sprintRangeMultiplier;
       
       ctx.fillStyle = 'rgba(255, 100, 100, 0.15)'; // Light red for proximity zone
       ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';

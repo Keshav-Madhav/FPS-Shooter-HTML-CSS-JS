@@ -2,6 +2,7 @@ import RayClass from "./RayClass.js";
 import Boundaries from "./BoundariesClass.js";
 import { DEG_TO_RAD } from "../utils/mathLUT.js";
 import SpatialGrid from "../utils/SpatialGrid.js";
+import { RenderConfig, PlayerConfig } from "../config/GameConfig.js";
 
 /**
  * @typedef {Object} RayHit
@@ -23,15 +24,11 @@ import SpatialGrid from "../utils/SpatialGrid.js";
  * @property {RayHit[]} [transparentHits] - Array of transparent boundary hits behind this one.
  */
 
-// Maximum render distance for culling
-const MAX_RENDER_DISTANCE = 2000;
+// Rendering constants (from config)
+const MAX_RENDER_DISTANCE = RenderConfig.maxRenderDistance;
 const MAX_RENDER_DISTANCE_SQ = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
-
-// Pixels per world unit for texture scaling
-const PIXELS_PER_WORLD_UNIT = 4;
-
-// Height scale factor for wall rendering
-const HEIGHT_SCALE_FACTOR = 100;
+const PIXELS_PER_WORLD_UNIT = RenderConfig.pixelsPerWorldUnit;
+const HEIGHT_SCALE_FACTOR = RenderConfig.heightScaleFactor;
 
 // Spatial grid cell size (tune based on average wall length)
 const SPATIAL_GRID_CELL_SIZE = 100;
@@ -61,7 +58,7 @@ class CameraClass {
    * @param {number} options.eyeHeight - Initial eye height for vertical parallax
    * @param {number} options.canvasHeight - Canvas height for precomputing height multipliers
    */
-  constructor({ x, y, fov = 80, rayCount = 1000, viewDirection = 0, eyeHeight = 0, canvasHeight = 1080 }) {
+  constructor({ x, y, fov = PlayerConfig.baseFov, rayCount = 1000, viewDirection = 0, eyeHeight = 0, canvasHeight = 1080 }) {
     this.pos = { x, y };
     this.fov = fov;
     this.rayCount = rayCount;

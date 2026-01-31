@@ -284,6 +284,58 @@ function createTestMap(textures, name) {
     radius: ZoneConfig.defaultRadius,
     onReached: () => console.log('Test map goal reached!')
   }));
+  
+  // Add floor zones for visual feedback
+  testMap.floorZones = [
+    // Jump zone in the central chamber - tells player to jump
+    {
+      x: circularChamberValues.centerX,
+      y: circularChamberValues.centerY,
+      radius: 50,
+      type: 'jump',
+      intensity: 1.0
+    },
+    // Danger zone in the south corridor
+    {
+      x: mapWidth / 2.5,
+      y: (mapHeight * 3) / 4 - 50,
+      radius: 40,
+      type: 'danger',
+      intensity: 0.9
+    },
+    // Warning zone near enemy in west corridor
+    {
+      x: mapWidth / 6 - 30,
+      y: mapHeight / 2,
+      radius: 60,
+      type: 'warning',
+      intensity: 1.0
+    },
+    // Pit indicator in the north room
+    {
+      x: mapWidth / 2.5 - 80,
+      y: mapHeight / 4 - 115,
+      radius: 35,
+      type: 'pit',
+      intensity: 1.0
+    },
+    // Speed zone in east corridor
+    {
+      x: (mapWidth * 3) / 4.5 - 50,
+      y: mapHeight / 2,
+      radius: 45,
+      type: 'speed',
+      intensity: 0.8
+    },
+    // Another jump zone at corridor intersection
+    {
+      x: mapWidth / 2.5 + 60,
+      y: mapHeight / 2,
+      radius: 30,
+      type: 'jump',
+      intensity: 0.7
+    }
+  ];
 
   return testMap;
 }

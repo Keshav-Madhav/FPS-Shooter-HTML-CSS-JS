@@ -38,7 +38,7 @@ import { createEnemyTestMap } from './maps/enemyTestMap.js';
 // Utilities
 import { getDeltaTime } from './utils/deltaTime.js';
 import { drawFPS } from './utils/fpsDisplay.js';
-import { render3D } from './utils/render3DFunction.js';
+import { render3D, setFloorCastingParams, floorCaster } from './utils/render3DFunction.js';
 import { drawBackground, drawMinimap, resizeCanvas } from './utils/utils.js';
 import FogOfWar from './utils/FogOfWar.js';
 
@@ -357,6 +357,69 @@ window.addEventListener('resize', () => {
 // ===========================================
 
 let showOptimizationStats = false; // Toggle with 'O' key
+let floorCastingEnabled = true; // Toggle with 'F' key
+
+// Performance tracking - lightweight
+let lastStatsTime = performance.now();
+let statsFrameCount = 0;
+let totalFrames = 0;
+let sessionStartTime = performance.now();
+
+// Cached stats (updated periodically, not every frame)
+let cachedStats = {
+  fps: 60,
+  avgFrameTime: 16.67,
+  minFrameTime: 16.67,
+  maxFrameTime: 16.67,
+  onePercentLow: 16.67,
+  frameTimeSum: 0,
+  frameTimeMin: 999,
+  frameTimeMax: 0,
+  frameTimeSamples: []
+};
+
+/**
+ * Updates performance tracking (called every frame, lightweight)
+ */
+function updatePerformanceTracking() {
+  const now = performance.now();
+  statsFrameCount++;
+  totalFrames++;
+  
+  // Track frame time for this frame
+  const frameTime = getDeltaTime(120) * (1000 / 120);
+  cachedStats.frameTimeSum += frameTime;
+  if (frameTime < cachedStats.frameTimeMin) cachedStats.frameTimeMin = frameTime;
+  if (frameTime > cachedStats.frameTimeMax) cachedStats.frameTimeMax = frameTime;
+  cachedStats.frameTimeSamples.push(frameTime);
+  
+  // Keep only last 60 samples
+  if (cachedStats.frameTimeSamples.length > 60) {
+    cachedStats.frameTimeSamples.shift();
+  }
+  
+  // Update cached stats every 500ms
+  const elapsed = now - lastStatsTime;
+  if (elapsed >= 500) {
+    cachedStats.fps = Math.round((statsFrameCount / elapsed) * 1000);
+    cachedStats.avgFrameTime = cachedStats.frameTimeSum / statsFrameCount;
+    cachedStats.minFrameTime = cachedStats.frameTimeMin;
+    cachedStats.maxFrameTime = cachedStats.frameTimeMax;
+    
+    // Calculate 1% low only during update (not every frame)
+    if (cachedStats.frameTimeSamples.length > 0) {
+      const sorted = cachedStats.frameTimeSamples.slice().sort((a, b) => b - a);
+      cachedStats.onePercentLow = sorted[0]; // Just use the worst frame
+    }
+    
+    // Reset for next period
+    statsFrameCount = 0;
+    lastStatsTime = now;
+    cachedStats.frameTimeSum = 0;
+    cachedStats.frameTimeMin = 999;
+    cachedStats.frameTimeMax = 0;
+  }
+}
 
 /**
  * Draws optimization statistics on screen
@@ -367,40 +430,182 @@ let showOptimizationStats = false; // Toggle with 'O' key
 function drawOptimizationStats(ctx, width, height) {
   if (!showOptimizationStats || !player) return;
   
+  const now = performance.now();
+  
+  // Use cached values
+  const currentFPS = cachedStats.fps;
+  const avgFrameTime = cachedStats.avgFrameTime;
+  const minFrameTime = cachedStats.minFrameTime;
+  const maxFrameTime = cachedStats.maxFrameTime;
+  const onePercentLow = cachedStats.onePercentLow;
+  
+  // Session time (cheap calculation)
+  const sessionTime = (now - sessionStartTime) / 1000;
+  const sessionMinutes = Math.floor(sessionTime / 60);
+  const sessionSeconds = Math.floor(sessionTime % 60);
+  
+  // These are already optimized in their respective classes
   const gridStats = player.camera.spatialGrid.getStats();
   const fogStats = fogOfWar.getStats();
   
+  // Calculate distance to goal if available
+  let distToGoal = null;
+  if (ActiveMap.goalZone) {
+    const dx = ActiveMap.goalZone.x - player.pos.x;
+    const dy = ActiveMap.goalZone.y - player.pos.y;
+    distToGoal = Math.sqrt(dx * dx + dy * dy);
+  }
+  
   ctx.save();
-  ctx.font = '12px monospace';
-  ctx.fillStyle = 'rgba(0, 255, 0, 0.9)';
-  ctx.textAlign = 'left';
   
-  const x = 10;
-  let y = height - 160;
-  const lineHeight = 14;
+  // Background panel - bottom left corner
+  const panelWidth = 270;
+  const panelHeight = 340;
+  const panelX = 8;
+  const panelY = height - panelHeight - 8;
   
-  ctx.fillText('=== Optimization Stats ===', x, y); y += lineHeight;
-  ctx.fillText(`Spatial Grid: ${gridStats.cellCount} cells`, x, y); y += lineHeight;
-  ctx.fillText(`Boundaries: ${gridStats.boundaryCount}`, x, y); y += lineHeight;
-  ctx.fillText(`Avg/Cell: ${gridStats.avgBoundariesPerCell}`, x, y); y += lineHeight;
-  ctx.fillText(`Max/Cell: ${gridStats.maxBoundariesPerCell}`, x, y); y += lineHeight;
-  ctx.fillText(`Memory: ~${gridStats.memoryEstimate}`, x, y); y += lineHeight;
-  ctx.fillText(`Ray Count: ${player.camera.rayCount}`, x, y); y += lineHeight;
-  ctx.fillText('--- Fog of War ---', x, y); y += lineHeight;
-  ctx.fillText(`Enabled: ${fogStats.enabled}`, x, y); y += lineHeight;
-  ctx.fillText(`Explored: ${fogStats.percentExplored} (${fogStats.exploredCells} cells)`, x, y); y += lineHeight;
-  ctx.fillText(`Seen Enemies: ${fogStats.seenEnemies}`, x, y); y += lineHeight;
-  ctx.fillText('Press O to hide', x, y);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+  ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+  
+  const x = panelX + 8;
+  let y = panelY + 16;
+  const lineHeight = 13;
+  
+  // Title
+  ctx.fillStyle = 'rgba(0, 255, 100, 1)';
+  ctx.font = 'bold 12px monospace';
+  ctx.fillText('DEBUG STATS', x, y);
+  ctx.font = '10px monospace';
+  ctx.fillStyle = 'rgba(100, 100, 100, 0.9)';
+  ctx.fillText(`Session: ${sessionMinutes}m ${sessionSeconds}s`, x + 120, y);
+  y += lineHeight + 4;
+  
+  // Performance Section
+  ctx.fillStyle = 'rgba(255, 100, 100, 1)';
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText('PERFORMANCE', x, y); y += lineHeight;
+  ctx.font = '10px monospace';
+  
+  // FPS with color coding
+  ctx.fillStyle = currentFPS >= 55 ? 'rgba(0, 255, 0, 0.9)' : currentFPS >= 30 ? 'rgba(255, 255, 0, 0.9)' : 'rgba(255, 50, 50, 0.9)';
+  ctx.fillText(`FPS: ${currentFPS}`, x, y);
+  ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+  ctx.fillText(`Avg: ${avgFrameTime.toFixed(2)}ms`, x + 70, y);
+  ctx.fillText(`1%Low: ${onePercentLow.toFixed(1)}ms`, x + 160, y);
+  y += lineHeight;
+  
+  ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+  ctx.fillText(`Min: ${minFrameTime.toFixed(2)}ms  Max: ${maxFrameTime.toFixed(2)}ms`, x, y);
+  ctx.fillText(`Frames: ${totalFrames}`, x + 170, y);
+  y += lineHeight + 3;
+  
+  // Rendering Section
+  ctx.fillStyle = 'rgba(100, 200, 255, 1)';
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText('RENDERING', x, y); y += lineHeight;
+  ctx.font = '10px monospace';
+  ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+  ctx.fillText(`Rays: ${player.camera.rayCount}`, x, y);
+  ctx.fillText(`FOV: ${player.camera.fov.toFixed(0)}°`, x + 85, y);
+  ctx.fillText(`Canvas: ${width}x${height}`, x + 145, y);
+  y += lineHeight;
+  ctx.fillText(`Floor/Ceil: ${floorCastingEnabled ? 'ON' : 'OFF'}`, x, y);
+  ctx.fillText(`Zones: ${ActiveMap.floorZones ? ActiveMap.floorZones.length : 0}`, x + 110, y);
+  ctx.fillText(`Enemies: ${enemies.length}`, x + 175, y);
+  y += lineHeight + 3;
+  
+  // Spatial Grid Section
+  ctx.fillStyle = 'rgba(255, 200, 100, 1)';
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText('SPATIAL GRID', x, y); y += lineHeight;
+  ctx.font = '10px monospace';
+  ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+  ctx.fillText(`Cells: ${gridStats.cellCount}`, x, y);
+  ctx.fillText(`Boundaries: ${gridStats.boundaryCount}`, x + 90, y);
+  y += lineHeight;
+  ctx.fillText(`Avg/Cell: ${gridStats.avgBoundariesPerCell}`, x, y);
+  ctx.fillText(`Max/Cell: ${gridStats.maxBoundariesPerCell}`, x + 100, y);
+  ctx.fillText(`${gridStats.memoryEstimate}`, x + 195, y);
+  y += lineHeight + 3;
+  
+  // Fog of War Section
+  ctx.fillStyle = 'rgba(200, 100, 255, 1)';
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText('FOG OF WAR', x, y); y += lineHeight;
+  ctx.font = '10px monospace';
+  ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+  ctx.fillText(`Status: ${fogStats.enabled ? 'ENABLED' : 'DISABLED'}`, x, y);
+  ctx.fillText(`Explored: ${fogStats.percentExplored}`, x + 130, y);
+  y += lineHeight;
+  ctx.fillText(`Cells: ${fogStats.exploredCells}`, x, y);
+  ctx.fillText(`Visible Enemies: ${fogStats.seenEnemies}`, x + 100, y);
+  y += lineHeight + 3;
+  
+  // Map Section
+  ctx.fillStyle = 'rgba(100, 255, 200, 1)';
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText('MAP', x, y); y += lineHeight;
+  ctx.font = '10px monospace';
+  ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+  ctx.fillText(`Name: ${ActiveMap.name}`, x, y);
+  ctx.fillText(`Size: ${ActiveMap.size.width}x${ActiveMap.size.height}`, x + 140, y);
+  y += lineHeight;
+  ctx.fillText(`Type: ${ActiveMap.mazeData ? 'Maze' : 'Custom'}`, x, y);
+  if (distToGoal !== null) {
+    ctx.fillText(`Goal Dist: ${distToGoal.toFixed(0)}`, x + 100, y);
+  }
+  y += lineHeight + 3;
+  
+  // Player Section
+  ctx.fillStyle = 'rgba(255, 255, 100, 1)';
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText('PLAYER', x, y); y += lineHeight;
+  ctx.font = '10px monospace';
+  ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+  ctx.fillText(`Pos: (${player.pos.x.toFixed(1)}, ${player.pos.y.toFixed(1)})`, x, y);
+  ctx.fillText(`Dir: ${player.viewDirection.toFixed(1)}°`, x + 165, y);
+  y += lineHeight;
+  ctx.fillText(`Eye: ${player.eyeHeight.toFixed(3)}`, x, y);
+  
+  // Player state indicators
+  let stateX = x + 90;
+  if (player.isCrouching) {
+    ctx.fillStyle = 'rgba(100, 150, 255, 0.9)';
+    ctx.fillText('CROUCH', stateX, y);
+    stateX += 55;
+  }
+  if (player.isSprinting) {
+    ctx.fillStyle = 'rgba(255, 200, 100, 0.9)';
+    ctx.fillText('SPRINT', stateX, y);
+    stateX += 55;
+  }
+  if (player.eyeHeight > 0.1) {
+    ctx.fillStyle = 'rgba(100, 255, 100, 0.9)';
+    ctx.fillText('JUMP', stateX, y);
+  }
+  y += lineHeight + 4;
+  
+  // Controls hint
+  ctx.fillStyle = 'rgba(120, 120, 120, 0.9)';
+  ctx.fillText('[O] Hide Stats  [F] Toggle Floor  [M] Map Select', x, y);
   
   ctx.restore();
 }
 
-// Add keyboard listener for stats toggle
+// Add keyboard listener for stats toggle and floor casting toggle
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'o' || e.key === 'O') {
-    if (!settingsMenu.visible && !mapSelector.visible) {
+  if (!settingsMenu.visible && !mapSelector.visible) {
+    if (e.key === 'o' || e.key === 'O') {
       showOptimizationStats = !showOptimizationStats;
       console.log(`Optimization stats: ${showOptimizationStats ? 'ON' : 'OFF'}`);
+    }
+    if (e.key === 'f' || e.key === 'F') {
+      floorCastingEnabled = !floorCastingEnabled;
+      floorCaster.enabled = floorCastingEnabled;
+      console.log(`Floor casting: ${floorCastingEnabled ? 'ON' : 'OFF'}`);
     }
   }
 });
@@ -464,6 +669,12 @@ function setActiveMap(maps, mapName) {
     fogOfWar.configure(mazeWidth, mazeHeight);
   }
   fogOfWar.reset();
+  
+  // Configure floor zones
+  floorCaster.clearZones();
+  if (ActiveMap.floorZones) {
+    floorCaster.setZones(ActiveMap.floorZones);
+  }
   
   // Update map selector
   mapSelector.setActiveMap(maps.indexOf(ActiveMap));
@@ -550,8 +761,8 @@ function setUpGame() {
   // Set initial active map
   setActiveMap(gameMaps, 'Maze Map');
   
-  console.log('Optimizations enabled: Spatial Grid, SIMD-like batching, Precomputed Height Multipliers');
-  console.log('Press O to toggle optimization stats overlay');
+  console.log('Optimizations enabled: Spatial Grid, SIMD-like batching, Precomputed Height Multipliers, Floor Casting');
+  console.log('Press O to toggle optimization stats overlay, F to toggle floor casting');
 }
 
 // ===========================================
@@ -631,6 +842,9 @@ function draw() {
   lastFrameTime = currentTime;
   
   const deltaTime = getDeltaTime(120);
+  
+  // Update performance tracking (lightweight, runs every frame)
+  updatePerformanceTracking();
 
   // Redraw background with parallax
   drawBackground(background_ctx, background_canvas.height, background_canvas.width, player.eyeHeight);
@@ -646,6 +860,14 @@ function draw() {
   const isMazeMap = !!ActiveMap.mazeData;
   
   if (gameState.showInstructions && isMazeMap) {
+    // Set floor casting params for static render
+    setFloorCastingParams({
+      playerX: player.pos.x,
+      playerY: player.pos.y,
+      playerAngle: player.viewDirection,
+      fov: player.camera.fov,
+      enabled: floorCastingEnabled
+    });
     // Render scene but don't update
     const scene = player.getScene(boundaries);
     render3D(scene, player.eyeHeight);
@@ -658,6 +880,14 @@ function draw() {
   }
 
   if (gameState.isGameOver) {
+    // Set floor casting params for static render
+    setFloorCastingParams({
+      playerX: player.pos.x,
+      playerY: player.pos.y,
+      playerAngle: player.viewDirection,
+      fov: player.camera.fov,
+      enabled: floorCastingEnabled
+    });
     // Render scene but don't update
     const scene = player.getScene(boundaries);
     render3D(scene, player.eyeHeight);
@@ -670,6 +900,14 @@ function draw() {
   }
 
   if (gameState.isWin) {
+    // Set floor casting params for static render
+    setFloorCastingParams({
+      playerX: player.pos.x,
+      playerY: player.pos.y,
+      playerAngle: player.viewDirection,
+      fov: player.camera.fov,
+      enabled: floorCastingEnabled
+    });
     // Render scene but don't update
     const scene = player.getScene(boundaries);
     render3D(scene, player.eyeHeight);
@@ -686,6 +924,15 @@ function draw() {
       boundary.update();
     }
   }
+
+  // Set floor casting parameters
+  setFloorCastingParams({
+    playerX: player.pos.x,
+    playerY: player.pos.y,
+    playerAngle: player.viewDirection,
+    fov: player.camera.fov,
+    enabled: floorCastingEnabled
+  });
 
   // Render scene
   const scene = player.getScene(boundaries);

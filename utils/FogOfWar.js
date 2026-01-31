@@ -1,3 +1,5 @@
+import { FogOfWarConfig, PlayerConfig } from "../config/GameConfig.js";
+
 /**
  * FogOfWar - Tracks explored areas on the minimap
  * 
@@ -21,12 +23,12 @@ class FogOfWar {
    * @param {number} config.rayCount - Number of rays to cast for visibility
    */
   constructor(config = {}) {
-    this.cellSize = config.cellSize || 5;
-    this.revealDistance = 350;
-    this.mapWidth = config.mapWidth || 3000;
-    this.mapHeight = config.mapHeight || 3000;
-    this.enabled = config.enabled !== undefined ? config.enabled : true;
-    this.rayCount = config.rayCount || 90; // Reduced for performance
+    this.cellSize = config.cellSize || FogOfWarConfig.cellSize;
+    this.revealDistance = config.revealDistance || FogOfWarConfig.revealDistance;
+    this.mapWidth = config.mapWidth || FogOfWarConfig.defaultMapWidth;
+    this.mapHeight = config.mapHeight || FogOfWarConfig.defaultMapHeight;
+    this.enabled = config.enabled !== undefined ? config.enabled : FogOfWarConfig.enabled;
+    this.rayCount = config.rayCount || FogOfWarConfig.rayCount;
     
     // Grid dimensions
     this.gridCols = Math.ceil(this.mapWidth * 2 / this.cellSize) + 1;
@@ -88,7 +90,7 @@ class FogOfWar {
    * @param {number} viewDirection - View direction in degrees
    * @param {number} fov - Field of view in degrees
    */
-  updateExploration(playerX, playerY, viewDirection = 0, fov = 80) {
+  updateExploration(playerX, playerY, viewDirection = 0, fov = PlayerConfig.baseFov) {
     if (!this.enabled) return;
     
     // Throttle updates for performance (skip throttle on first call)

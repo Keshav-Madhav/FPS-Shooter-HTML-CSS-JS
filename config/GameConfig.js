@@ -60,7 +60,7 @@ export const PlayerConfig = {
 
   // Vertical movement
   baseEyeHeight: 0,
-  crouchEyeHeight: -0.25,
+  crouchEyeHeight: -0.4,
   jumpStrength: 0.03,
   gravity: 0.00085,
   maxEyeHeight: 1.5,

@@ -1,27 +1,15 @@
 /**
- * Global configuration variables for the raycaster engine
+ * Global variables for the raycaster engine
+ * Note: Configuration values have been moved to config/GameConfig.js
+ * Only runtime globals that need to be shared between non-module scripts are kept here.
  */
 
-// Rendering scale factors
-const heightScaleFactor = 100;
-const brightnessScaleFactor = 100;
-const smoothingRadius = 3;
-const darknessExponent = 2.0;
-
-// Maximum render distance (walls beyond this are culled)
-const maxRenderDistance = 2000;
-
-// Minimap configuration
+// Minimap settings (runtime state, modified by script.js, used by utils.js)
+// Default values from MinimapConfig
 var miniMapSettings = {
   x: 90,
   y: 90,
   scale: 0.35,
   radius: 220,
-  rotateWithPlayer: true  // When true, map rotates so player always faces north (up)
+  rotateWithPlayer: true
 };
-
-// Mouse sensitivity for rotation
-const sensitivity = 0.2;
-
-// Frame timing
-let prevTime = performance.now();

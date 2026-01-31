@@ -1,6 +1,7 @@
 import CameraClass from './CameraClass.js';
 import Boundaries from './BoundariesClass.js';
 import { DEG_TO_RAD, HALF_PI, TWO_PI, fastSin, fastCos, normalizeAngle } from '../utils/mathLUT.js';
+import { PlayerConfig } from '../config/GameConfig.js';
 
 /**
  * @typedef {Object} RayIntersection
@@ -10,30 +11,30 @@ import { DEG_TO_RAD, HALF_PI, TWO_PI, fastSin, fastCos, normalizeAngle } from '.
  * @property {Boundaries|null} boundary - The intersected boundary object, or `null` if no intersection occurs.
  */
 
-// Collision constants
-const PLAYER_RADIUS = 12; // Player collision radius
-const COLLISION_MARGIN = 1.0; // Margin to prevent floating point issues
+// Collision constants (from config)
+const PLAYER_RADIUS = PlayerConfig.radius;
+const COLLISION_MARGIN = PlayerConfig.collisionMargin;
 const MAX_STEP_DISTANCE = 8; // Maximum distance per collision step (prevents phasing through walls)
 
-// Vertical movement constants
-const BASE_EYE_HEIGHT = 0; // Normal standing eye level (0 = center of screen)
-const CROUCH_EYE_HEIGHT = -0.25; // Crouching lowers the view (negative = lower)
-const JUMP_STRENGTH = 0.03; // Initial jump velocity (faster upward movement)
-const GRAVITY = 0.00085; // Gravity acceleration (stronger for snappier falls)
-const MAX_EYE_HEIGHT = 1.5; // Maximum jump height - high enough for natural arc
-const UNCROUCH_SPEED = 0.08; // How fast player stands up from crouch
+// Vertical movement constants (from config)
+const BASE_EYE_HEIGHT = PlayerConfig.baseEyeHeight;
+const CROUCH_EYE_HEIGHT = PlayerConfig.crouchEyeHeight;
+const JUMP_STRENGTH = PlayerConfig.jumpStrength;
+const GRAVITY = PlayerConfig.gravity;
+const MAX_EYE_HEIGHT = PlayerConfig.maxEyeHeight;
+const UNCROUCH_SPEED = PlayerConfig.uncrouchSpeed;
 
-// Speed constants
-const BASE_MOVE_SPEED = 1; // Normal walking speed
-const CROUCH_SPEED_MULTIPLIER = 0.45; // 70% speed when crouching
-const SPRINT_SPEED_MULTIPLIER = 3; // 3x speed when sprinting
-const JUMP_SPEED_MULTIPLIER = 1.4; // 1.4x speed when jumping (risk/reward tradeoff)
+// Speed constants (from config)
+const BASE_MOVE_SPEED = PlayerConfig.baseMoveSpeed;
+const CROUCH_SPEED_MULTIPLIER = PlayerConfig.crouchSpeedMultiplier;
+const SPRINT_SPEED_MULTIPLIER = PlayerConfig.sprintSpeedMultiplier;
+const JUMP_SPEED_MULTIPLIER = PlayerConfig.jumpSpeedMultiplier;
 
-// FOV constants
-const BASE_FOV = 80; // Default field of view
-const SLOW_FOV = 83; // Slightly wider FOV when moving slow (crouching)
-const FAST_FOV = 77; // Slightly narrower FOV when moving fast (sprinting)
-const FOV_LERP_SPEED = 0.15; // How fast FOV transitions
+// FOV constants (from config)
+const BASE_FOV = PlayerConfig.baseFov;
+const SLOW_FOV = PlayerConfig.slowFov;
+const FAST_FOV = PlayerConfig.fastFov;
+const FOV_LERP_SPEED = PlayerConfig.fovLerpSpeed;
 
 class Player {
   /**

@@ -1,4 +1,6 @@
 import Boundaries from "../classes/BoundariesClass.js";
+import floorCaster from "./FloorCaster.js";
+import { RenderConfig } from "../config/GameConfig.js";
 
 /**
  * @typedef {Object} RayHit
@@ -19,12 +21,12 @@ import Boundaries from "../classes/BoundariesClass.js";
  * @property {RayHit[]} [transparentHits] - Array of transparent boundary hits.
  */
 
-// Rendering constants
-const HEIGHT_SCALE_FACTOR = 100;
-const BRIGHTNESS_SCALE_FACTOR = 100;
-const DARKNESS_EXPONENT = 2.0;
-const SMOOTHING_RADIUS = 3;
-const PARALLAX_STRENGTH = 0.5; // How much eye height affects wall position
+// Rendering constants (from config)
+const HEIGHT_SCALE_FACTOR = RenderConfig.heightScaleFactor;
+const BRIGHTNESS_SCALE_FACTOR = RenderConfig.brightnessScaleFactor;
+const DARKNESS_EXPONENT = RenderConfig.darknessExponent;
+const SMOOTHING_RADIUS = RenderConfig.smoothingRadius;
+const PARALLAX_STRENGTH = RenderConfig.parallaxStrength;
 
 // Distance threshold for LOD (Level of Detail) optimization
 const LOD_DISTANCE_THRESHOLD = 500; // Beyond this, use simplified rendering
@@ -270,6 +272,31 @@ function renderTranslucentSlice(ctx, x, y, width, height, texture, color, textur
   }
 }
 
+// Floor casting state (set via setFloorCastingParams before render3D)
+let _floorCastEnabled = true;
+let _playerX = 0;
+let _playerY = 0;
+let _playerAngle = 0;
+let _playerFov = 0; // Set by setFloorCastingParams each frame
+
+/**
+ * Sets parameters needed for floor casting
+ * Call this before render3D each frame
+ * @param {Object} params - Floor casting parameters
+ * @param {number} params.playerX - Player world X position
+ * @param {number} params.playerY - Player world Y position
+ * @param {number} params.playerAngle - Player view angle in degrees
+ * @param {number} params.fov - Field of view in degrees
+ * @param {boolean} [params.enabled=true] - Whether floor casting is enabled
+ */
+function setFloorCastingParams(params) {
+  _playerX = params.playerX;
+  _playerY = params.playerY;
+  _playerAngle = params.playerAngle * (Math.PI / 180); // Convert to radians
+  _playerFov = params.fov * (Math.PI / 180);
+  _floorCastEnabled = params.enabled ?? true;
+}
+
 /**
  * Renders the 3D scene by drawing wall slices with textures and darkness.
  * Optimized with:
@@ -278,6 +305,7 @@ function renderTranslucentSlice(ctx, x, y, width, height, texture, color, textur
  * - Typed arrays for better memory performance
  * - Reduced draw calls and state changes
  * - Vertical parallax support for jumping and crouching
+ * - Floor and ceiling casting with perspective
  * 
  * @param {RayIntersection[]} scene - An array of intersection data for each ray.
  * @param {number} [eyeHeight=0] - Vertical camera position (-1 to 1, 0 = center)
@@ -294,6 +322,20 @@ function render3D(scene, eyeHeight = 0) {
     const dist = scene[i].distance;
     brightnessCache[i] = calculateBrightness(dist);
     zBuffer[i] = dist; // Store distance for occlusion testing
+  }
+  
+  // Floor and ceiling pass: Render before walls so walls draw on top
+  if (_floorCastEnabled && floorCaster.enabled) {
+    floorCaster.updateDimensions(cachedWidth, cachedHeight);
+    floorCaster.render(
+      main_ctx,
+      scene,
+      _playerX,
+      _playerY,
+      _playerAngle,
+      _playerFov,
+      eyeHeight
+    );
   }
   
   // Second pass: Render opaque walls
@@ -424,4 +466,4 @@ function render3D(scene, eyeHeight = 0) {
   }
 }
 
-export { render3D };
+export { render3D, setFloorCastingParams, floorCaster };
