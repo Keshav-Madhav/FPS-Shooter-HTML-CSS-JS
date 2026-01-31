@@ -452,6 +452,7 @@ function setActiveMap(maps, mapName) {
   miniMapSettings.radius = settings.radius ?? MinimapConfig.default.radius;
   miniMapSettings.x = settings.x ?? MinimapConfig.default.x;
   miniMapSettings.y = settings.y ?? MinimapConfig.default.y;
+  miniMapSettings.rotateWithPlayer = settings.rotateWithPlayer ?? MinimapConfig.default.rotateWithPlayer;
   
   // Configure and reset fog of war
   // Only enable fog of war for maze maps

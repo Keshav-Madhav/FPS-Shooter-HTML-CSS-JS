@@ -646,12 +646,6 @@ function createEnemyTestMap(textures, name) {
     spawnDirection: 270 // Facing left
   }));
   
-  // Set minimap for good overview
-  enemyTestMap.setMinimapSettings({
-    scale: 0.35,
-    radius: 350
-  });
-  
   console.log(`Enemy Test Map created: ${boundaries.length} walls, ${enemies.length} enemies (${mapWidth}x${mapHeight})`);
   
   return enemyTestMap;

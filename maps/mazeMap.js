@@ -1111,12 +1111,6 @@ function createMazeMap(textures, name, options = {}) {
     cellSize: cellSize
   };
   
-  // Set zoomed-in minimap for the maze (easier to navigate tight corridors)
-  mazeMap.setMinimapSettings({
-    scale: 0.4,  // More zoomed in than default (0.25)
-    radius: 250  // Smaller visible radius
-  });
-  
   console.log(`Maze generated: ${cols}x${rows} grid, ${boundaries.length} walls, ${enemies.length} enemies, ${rooms.length} rooms`);
   console.log(`Start zone: (${spawnLocation.x}, ${spawnLocation.y}), Goal zone: (${goalX}, ${goalY})`);
   

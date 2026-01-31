@@ -13,10 +13,10 @@ const maxRenderDistance = 2000;
 
 // Minimap configuration
 var miniMapSettings = {
-  x: 110,
-  y: 110,
-  scale: 0.25,
-  radius: 350,
+  x: 90,
+  y: 90,
+  scale: 0.35,
+  radius: 220,
   rotateWithPlayer: true  // When true, map rotates so player always faces north (up)
 };
 
