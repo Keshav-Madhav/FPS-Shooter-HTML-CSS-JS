@@ -639,12 +639,12 @@ function createEnemyTestMap(textures, name) {
   enemyTestMap.userViewDirection = 270; // Face left
   
   // Set start zone at spawn
-  enemyTestMap.setStartZone(new StartZone(
-    spawnLocation.x,
-    spawnLocation.y,
-    ZoneConfig.defaultRadius * 1.5, // Larger safe zone for testing
-    270 // Facing left
-  ));
+  enemyTestMap.setStartZone(new StartZone({
+    x: spawnLocation.x,
+    y: spawnLocation.y,
+    radius: ZoneConfig.defaultRadius * 1.5, // Larger safe zone for testing
+    spawnDirection: 270 // Facing left
+  }));
   
   // Set minimap for good overview
   enemyTestMap.setMinimapSettings({

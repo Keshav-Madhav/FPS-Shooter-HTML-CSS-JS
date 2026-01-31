@@ -26,15 +26,22 @@ const DARKNESS_EXPONENT = 2.0;
 const SMOOTHING_RADIUS = 3;
 const PARALLAX_STRENGTH = 0.5; // How much eye height affects wall position
 
+// Distance threshold for LOD (Level of Detail) optimization
+const LOD_DISTANCE_THRESHOLD = 500; // Beyond this, use simplified rendering
+
 // Canvas dimensions cache
 let cachedWidth = 0;
 let cachedHeight = 0;
 let cachedHalfHeight = 0;
 let sliceWidth = 0;
+let cachedBaseHeightMultiplier = 0; // For fallback when heightMultiplier not provided
 
 // Pre-allocated typed arrays for performance
 let brightnessCache = null;
 let zBuffer = null; // 1D Z-buffer for occlusion
+
+// Flag to track if we're using precomputed multipliers
+let usePrecomputedMultipliers = false;
 
 /**
  * Updates cached canvas dimensions and reallocates buffers if needed
@@ -48,6 +55,7 @@ function updateCanvasCache(width, height, rayCount) {
     cachedHeight = height;
     cachedHalfHeight = height * 0.5;
     sliceWidth = width / rayCount;
+    cachedBaseHeightMultiplier = height * HEIGHT_SCALE_FACTOR;
   }
   
   // Reallocate buffers if ray count changed
@@ -290,36 +298,52 @@ function render3D(scene, eyeHeight = 0) {
   
   // Second pass: Render opaque walls
   // Process in order (no sorting needed for opaque walls)
+  // Uses precomputed height multipliers when available for faster wall height calculation
   for (let i = 0; i < sceneLength; i++) {
-    const { distance, textureX, texture, color, boundary } = scene[i];
+    const { distance, textureX, texture, color, boundary, heightMultiplier } = scene[i];
     
     // Skip rays that hit nothing
     if (distance === Infinity) continue;
     
-    // Calculate smoothed brightness using neighboring rays
-    let brightnessSum = brightnessCache[i];
-    let count = 1;
+    // LOD optimization: skip brightness smoothing for distant walls
+    let averageBrightness;
+    if (distance > LOD_DISTANCE_THRESHOLD) {
+      // Far walls: use raw brightness (faster)
+      averageBrightness = brightnessCache[i];
+    } else {
+      // Near walls: calculate smoothed brightness using neighboring rays
+      let brightnessSum = brightnessCache[i];
+      let count = 1;
+      
+      // Unrolled loop for common case (smoothingRadius = 3)
+      const left3 = i - 3;
+      const left2 = i - 2;
+      const left1 = i - 1;
+      const right1 = i + 1;
+      const right2 = i + 2;
+      const right3 = i + 3;
+      
+      if (left1 >= 0) { brightnessSum += brightnessCache[left1]; count++; }
+      if (left2 >= 0) { brightnessSum += brightnessCache[left2]; count++; }
+      if (left3 >= 0) { brightnessSum += brightnessCache[left3]; count++; }
+      if (right1 < sceneLength) { brightnessSum += brightnessCache[right1]; count++; }
+      if (right2 < sceneLength) { brightnessSum += brightnessCache[right2]; count++; }
+      if (right3 < sceneLength) { brightnessSum += brightnessCache[right3]; count++; }
+      
+      averageBrightness = brightnessSum / count;
+    }
     
-    // Unrolled loop for common case (smoothingRadius = 3)
-    const left3 = i - 3;
-    const left2 = i - 2;
-    const left1 = i - 1;
-    const right1 = i + 1;
-    const right2 = i + 2;
-    const right3 = i + 3;
-    
-    if (left1 >= 0) { brightnessSum += brightnessCache[left1]; count++; }
-    if (left2 >= 0) { brightnessSum += brightnessCache[left2]; count++; }
-    if (left3 >= 0) { brightnessSum += brightnessCache[left3]; count++; }
-    if (right1 < sceneLength) { brightnessSum += brightnessCache[right1]; count++; }
-    if (right2 < sceneLength) { brightnessSum += brightnessCache[right2]; count++; }
-    if (right3 < sceneLength) { brightnessSum += brightnessCache[right3]; count++; }
-    
-    const averageBrightness = brightnessSum / count;
-    
-    // Calculate wall height using perspective projection
-    // Multiply by HEIGHT_SCALE_FACTOR / distance
-    const wallHeight = (cachedHeight * HEIGHT_SCALE_FACTOR) / distance;
+    // Calculate wall height using precomputed multiplier if available
+    // With precomputed: wallHeight = heightMultiplier / distance (single divide)
+    // Without precomputed: wallHeight = (height * SCALE) / distance (multiply + divide)
+    let wallHeight;
+    if (heightMultiplier && heightMultiplier > 0) {
+      // Use precomputed multiplier (includes fisheye correction)
+      wallHeight = heightMultiplier / distance;
+    } else {
+      // Fallback to manual calculation
+      wallHeight = cachedBaseHeightMultiplier / distance;
+    }
     
     // Distance-based parallax: closer walls (larger wallHeight) move more
     // Positive eyeHeight (jumping) = walls shift down, negative (crouching) = walls shift up
@@ -379,7 +403,15 @@ function render3D(scene, eyeHeight = 0) {
     const slice = transparentSlices[i];
     const { rayIndex, distance, textureX, texture, color, boundary, spriteTexture, mirrored } = slice;
     
-    const wallHeight = (cachedHeight * HEIGHT_SCALE_FACTOR) / distance;
+    // Use precomputed height multiplier from the corresponding ray if available
+    const sceneItem = scene[rayIndex];
+    let wallHeight;
+    if (sceneItem && sceneItem.heightMultiplier && sceneItem.heightMultiplier > 0) {
+      wallHeight = sceneItem.heightMultiplier / distance;
+    } else {
+      wallHeight = cachedBaseHeightMultiplier / distance;
+    }
+    
     // Distance-based parallax for transparent walls too
     const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
     const y = cachedHalfHeight - wallHeight * 0.5 + verticalOffset;

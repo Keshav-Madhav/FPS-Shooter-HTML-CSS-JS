@@ -6,7 +6,7 @@
  */
 
 // Core game components
-import { GameLoop, GameStateManager, InputHandler } from './core/index.js';
+import { GameLoop, GameStateManager, InputHandler, RaycastManager } from './core/index.js';
 
 // Configuration
 import { MinimapConfig, DetectionConfig, ControlsConfig } from './config/index.js';
@@ -334,6 +334,59 @@ let lastFrameTime = performance.now();
 window.addEventListener('resize', () => {
   resizeCanvas({ canvasArray: [main_canvas, background_canvas], ratio: 16 / 9 });
   drawBackground(background_ctx, background_canvas.height, background_canvas.width);
+  
+  // Update camera's canvas height for precomputed height multipliers
+  if (player && player.camera) {
+    player.camera.setCanvasHeight(main_canvas.height);
+  }
+});
+
+// ===========================================
+// OPTIMIZATION STATS (Debug)
+// ===========================================
+
+let showOptimizationStats = false; // Toggle with 'O' key
+
+/**
+ * Draws optimization statistics on screen
+ * @param {CanvasRenderingContext2D} ctx 
+ * @param {number} width 
+ * @param {number} height 
+ */
+function drawOptimizationStats(ctx, width, height) {
+  if (!showOptimizationStats || !player) return;
+  
+  const gridStats = player.camera.spatialGrid.getStats();
+  
+  ctx.save();
+  ctx.font = '12px monospace';
+  ctx.fillStyle = 'rgba(0, 255, 0, 0.9)';
+  ctx.textAlign = 'left';
+  
+  const x = 10;
+  let y = height - 120;
+  const lineHeight = 14;
+  
+  ctx.fillText('=== Optimization Stats ===', x, y); y += lineHeight;
+  ctx.fillText(`Spatial Grid: ${gridStats.cellCount} cells`, x, y); y += lineHeight;
+  ctx.fillText(`Boundaries: ${gridStats.boundaryCount}`, x, y); y += lineHeight;
+  ctx.fillText(`Avg/Cell: ${gridStats.avgBoundariesPerCell}`, x, y); y += lineHeight;
+  ctx.fillText(`Max/Cell: ${gridStats.maxBoundariesPerCell}`, x, y); y += lineHeight;
+  ctx.fillText(`Memory: ~${gridStats.memoryEstimate}`, x, y); y += lineHeight;
+  ctx.fillText(`Ray Count: ${player.camera.rayCount}`, x, y); y += lineHeight;
+  ctx.fillText('Press O to hide', x, y);
+  
+  ctx.restore();
+}
+
+// Add keyboard listener for stats toggle
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'o' || e.key === 'O') {
+    if (!settingsMenu.visible && !mapSelector.visible) {
+      showOptimizationStats = !showOptimizationStats;
+      console.log(`Optimization stats: ${showOptimizationStats ? 'ON' : 'OFF'}`);
+    }
+  }
 });
 
 // ===========================================
@@ -458,11 +511,17 @@ function setUpGame() {
   // Set up map selector
   mapSelector.setMaps(gameMaps);
 
-  // Create player
+  // Create player with canvas height for precomputed height multipliers
   player = new Player({ x: 0, y: 0 });
+  
+  // Initialize camera with canvas height for precomputed height multipliers
+  player.camera.setCanvasHeight(main_canvas.height);
 
   // Set initial active map
   setActiveMap(gameMaps, 'Maze Map');
+  
+  console.log('Optimizations enabled: Spatial Grid, SIMD-like batching, Precomputed Height Multipliers');
+  console.log('Press O to toggle optimization stats overlay');
 }
 
 // ===========================================
@@ -675,6 +734,9 @@ function draw() {
 
   // Map selector (drawn last to be on top)
   mapSelector.draw(main_ctx, main_canvas.width, main_canvas.height);
+  
+  // Optimization stats (debug overlay)
+  drawOptimizationStats(main_ctx, main_canvas.width, main_canvas.height);
 }
 
 // ===========================================

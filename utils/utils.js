@@ -328,73 +328,79 @@ function drawMinimap(ctx, boundaries, user, enemies, goalZone = null, startZone 
   const offsetY = centerY - user.pos.y;
 
   // Draw start zone if provided (pulsing blue/cyan circle)
-  if (startZone) {
+  if (startZone && isFinite(startZone.x) && isFinite(startZone.y) && isFinite(startZone.radius) && startZone.radius > 0) {
     const startPos = rotatePoint(startZone.x, startZone.y);
     const startX = startPos.x;
     const startY = startPos.y;
     const startRadius = startZone.radius;
     
-    // Pulsing effect (slightly different timing)
-    const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.003);
-    
-    // Outer glow (cyan/blue color)
-    const startGradient = ctx.createRadialGradient(startX, startY, 0, startX, startY, startRadius * 1.5);
-    startGradient.addColorStop(0, `rgba(0, 200, 255, ${0.5 * pulse})`);
-    startGradient.addColorStop(0.7, `rgba(0, 200, 255, ${0.25 * pulse})`);
-    startGradient.addColorStop(1, 'rgba(0, 200, 255, 0)');
-    
-    ctx.fillStyle = startGradient;
-    ctx.beginPath();
-    ctx.arc(startX, startY, startRadius * 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Start marker ring
-    ctx.strokeStyle = `rgba(0, 200, 255, ${pulse})`;
-    ctx.lineWidth = 2 * invScale;
-    ctx.beginPath();
-    ctx.arc(startX, startY, startRadius, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    // Inner start marker
-    ctx.fillStyle = `rgba(0, 200, 255, ${0.8 * pulse})`;
-    ctx.beginPath();
-    ctx.arc(startX, startY, 4 * invScale, 0, Math.PI * 2);
-    ctx.fill();
+    // Guard against non-finite transformed coordinates
+    if (isFinite(startX) && isFinite(startY)) {
+      // Pulsing effect (slightly different timing)
+      const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.003);
+      
+      // Outer glow (cyan/blue color)
+      const startGradient = ctx.createRadialGradient(startX, startY, 0, startX, startY, startRadius * 1.5);
+      startGradient.addColorStop(0, `rgba(0, 200, 255, ${0.5 * pulse})`);
+      startGradient.addColorStop(0.7, `rgba(0, 200, 255, ${0.25 * pulse})`);
+      startGradient.addColorStop(1, 'rgba(0, 200, 255, 0)');
+      
+      ctx.fillStyle = startGradient;
+      ctx.beginPath();
+      ctx.arc(startX, startY, startRadius * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Start marker ring
+      ctx.strokeStyle = `rgba(0, 200, 255, ${pulse})`;
+      ctx.lineWidth = 2 * invScale;
+      ctx.beginPath();
+      ctx.arc(startX, startY, startRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Inner start marker
+      ctx.fillStyle = `rgba(0, 200, 255, ${0.8 * pulse})`;
+      ctx.beginPath();
+      ctx.arc(startX, startY, 4 * invScale, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // Draw goal zone if provided (pulsing green circle)
-  if (goalZone) {
+  if (goalZone && isFinite(goalZone.x) && isFinite(goalZone.y) && isFinite(goalZone.radius) && goalZone.radius > 0) {
     const goalPos = rotatePoint(goalZone.x, goalZone.y);
     const goalX = goalPos.x;
     const goalY = goalPos.y;
     const goalRadius = goalZone.radius;
     
-    // Pulsing effect
-    const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.004);
-    
-    // Outer glow
-    const goalGradient = ctx.createRadialGradient(goalX, goalY, 0, goalX, goalY, goalRadius * 1.5);
-    goalGradient.addColorStop(0, `rgba(0, 255, 100, ${0.6 * pulse})`);
-    goalGradient.addColorStop(0.7, `rgba(0, 255, 100, ${0.3 * pulse})`);
-    goalGradient.addColorStop(1, 'rgba(0, 255, 100, 0)');
-    
-    ctx.fillStyle = goalGradient;
-    ctx.beginPath();
-    ctx.arc(goalX, goalY, goalRadius * 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Goal marker ring
-    ctx.strokeStyle = `rgba(0, 255, 100, ${pulse})`;
-    ctx.lineWidth = 2 * invScale;
-    ctx.beginPath();
-    ctx.arc(goalX, goalY, goalRadius, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    // Inner goal marker
-    ctx.fillStyle = `rgba(0, 255, 100, ${0.8 * pulse})`;
-    ctx.beginPath();
-    ctx.arc(goalX, goalY, 4 * invScale, 0, Math.PI * 2);
-    ctx.fill();
+    // Guard against non-finite transformed coordinates
+    if (isFinite(goalX) && isFinite(goalY)) {
+      // Pulsing effect
+      const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.004);
+      
+      // Outer glow
+      const goalGradient = ctx.createRadialGradient(goalX, goalY, 0, goalX, goalY, goalRadius * 1.5);
+      goalGradient.addColorStop(0, `rgba(0, 255, 100, ${0.6 * pulse})`);
+      goalGradient.addColorStop(0.7, `rgba(0, 255, 100, ${0.3 * pulse})`);
+      goalGradient.addColorStop(1, 'rgba(0, 255, 100, 0)');
+      
+      ctx.fillStyle = goalGradient;
+      ctx.beginPath();
+      ctx.arc(goalX, goalY, goalRadius * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Goal marker ring
+      ctx.strokeStyle = `rgba(0, 255, 100, ${pulse})`;
+      ctx.lineWidth = 2 * invScale;
+      ctx.beginPath();
+      ctx.arc(goalX, goalY, goalRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Inner goal marker
+      ctx.fillStyle = `rgba(0, 255, 100, ${0.8 * pulse})`;
+      ctx.beginPath();
+      ctx.arc(goalX, goalY, 4 * invScale, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // Draw path if provided (animated dotted line from start through player to goal)

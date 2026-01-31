@@ -46,6 +46,7 @@ class Player {
    * @param {number} options.fov - Field of view in degrees
    * @param {number} options.rayCount - Number of rays to cast
    * @param {number} options.collisionRadius - Player collision radius
+   * @param {number} options.canvasHeight - Canvas height for precomputed multipliers
    */
   constructor({ 
     x, 
@@ -54,7 +55,8 @@ class Player {
     moveSpeed = BASE_MOVE_SPEED, 
     fov = BASE_FOV, 
     rayCount = 1000,
-    collisionRadius = PLAYER_RADIUS
+    collisionRadius = PLAYER_RADIUS,
+    canvasHeight = 1080
   }) {
     this.pos = { x, y };
     this.viewDirection = viewDirection;
@@ -98,14 +100,15 @@ class Player {
     this._cachedCosStrafe = Math.cos(this._cachedViewDirRad + HALF_PI);
     this._cachedSinStrafe = Math.sin(this._cachedViewDirRad + HALF_PI);
 
-    // Player's camera
+    // Player's camera with precomputed height multipliers
     this.camera = new CameraClass({
       x,
       y,
       fov,
       rayCount,
       viewDirection,
-      eyeHeight: this.eyeHeight
+      eyeHeight: this.eyeHeight,
+      canvasHeight
     });
   }
 

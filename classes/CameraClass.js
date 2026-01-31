@@ -1,6 +1,7 @@
 import RayClass from "./RayClass.js";
 import Boundaries from "./BoundariesClass.js";
 import { DEG_TO_RAD } from "../utils/mathLUT.js";
+import SpatialGrid from "../utils/SpatialGrid.js";
 
 /**
  * @typedef {Object} RayHit
@@ -22,15 +23,31 @@ import { DEG_TO_RAD } from "../utils/mathLUT.js";
  * @property {RayHit[]} [transparentHits] - Array of transparent boundary hits behind this one.
  */
 
-// Maximum render distance for culling (set very high to effectively disable for now)
-const MAX_RENDER_DISTANCE = 20000;
+// Maximum render distance for culling
+const MAX_RENDER_DISTANCE = 2000;
 const MAX_RENDER_DISTANCE_SQ = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
 
 // Pixels per world unit for texture scaling
 const PIXELS_PER_WORLD_UNIT = 4;
 
+// Height scale factor for wall rendering
+const HEIGHT_SCALE_FACTOR = 100;
+
+// Spatial grid cell size (tune based on average wall length)
+const SPATIAL_GRID_CELL_SIZE = 100;
+
+// SIMD-like batch size for ray processing
+const RAY_BATCH_SIZE = 4;
+
 /**
- * Optimized camera class with ray reuse, frustum culling, and depth buffer support.
+ * Optimized camera class with ray reuse, frustum culling, spatial grid, and depth buffer support.
+ * 
+ * Optimization features:
+ * - Spatial grid for O(1) boundary lookup per cell
+ * - Precomputed fisheye correction values
+ * - Precomputed height multipliers for faster wall height calculation
+ * - SIMD-like batch processing of rays
+ * - Pre-allocated result arrays to avoid GC
  */
 class CameraClass {
   /**
@@ -42,13 +59,15 @@ class CameraClass {
    * @param {number} options.rayCount - Number of rays to cast
    * @param {number} options.viewDirection - Initial view direction in degrees
    * @param {number} options.eyeHeight - Initial eye height for vertical parallax
+   * @param {number} options.canvasHeight - Canvas height for precomputing height multipliers
    */
-  constructor({ x, y, fov = 80, rayCount = 1000, viewDirection = 0, eyeHeight = 0 }) {
+  constructor({ x, y, fov = 80, rayCount = 1000, viewDirection = 0, eyeHeight = 0, canvasHeight = 1080 }) {
     this.pos = { x, y };
     this.fov = fov;
     this.rayCount = rayCount;
     this.viewDirection = viewDirection;
     this.eyeHeight = eyeHeight; // Vertical position for parallax (-1 to 1, 0 = center)
+    this.canvasHeight = canvasHeight;
     
     // Pre-allocate rays array - we'll reuse these instead of recreating
     this.rays = new Array(rayCount);
@@ -71,6 +90,21 @@ class CameraClass {
       this.cosCache[i] = Math.cos(this.angleOffsets[i]);
     }
     
+    // Precomputed height multipliers: heightMultiplier[i] / distance = wallHeight
+    // This combines canvasHeight * HEIGHT_SCALE_FACTOR / cosCache[i] into one multiply
+    // Result: wallHeight = heightMultipliers[i] / distance (single division per ray)
+    this.heightMultipliers = new Float32Array(rayCount);
+    this._updateHeightMultipliers();
+    
+    // Spatial grid for efficient boundary lookup
+    this.spatialGrid = new SpatialGrid(SPATIAL_GRID_CELL_SIZE);
+    this._spatialGridDirty = true;
+    this._lastBoundaries = null;
+    
+    // Pre-allocated arrays for spatial grid queries (avoid allocations per ray)
+    this._rayBoundaryBuffer = new Array(200); // Max boundaries per ray
+    this._rayBoundarySet = new Set();
+    
     // Pre-allocate scene result array
     this._sceneResult = new Array(rayCount);
     for (let i = 0; i < rayCount; i++) {
@@ -80,7 +114,8 @@ class CameraClass {
         texture: null,
         color: null,
         boundary: null,
-        transparentHits: []
+        transparentHits: [],
+        heightMultiplier: 0 // Store precomputed multiplier for renderer
       };
     }
     
@@ -89,6 +124,38 @@ class CameraClass {
     this._frustumMargin = halfFovRad + 0.5; // Extra margin for wide walls
     
     this._updateRays();
+  }
+  
+  /**
+   * Updates precomputed height multipliers
+   * Called when FOV or canvas height changes
+   * 
+   * NOTE: The distance stored in scene results is ALREADY fisheye-corrected
+   * (multiplied by cosCache), so we should NOT divide by cosCache here.
+   * The height multiplier is simply: canvasHeight * HEIGHT_SCALE_FACTOR
+   * And wall height = heightMultiplier / correctedDistance
+   * 
+   * @private
+   */
+  _updateHeightMultipliers() {
+    const baseMultiplier = this.canvasHeight * HEIGHT_SCALE_FACTOR;
+    for (let i = 0; i < this.rayCount; i++) {
+      // Distance in scene is already corrected (rawDist * cosCache)
+      // So height multiplier is just the base multiplier
+      // wallHeight = baseMultiplier / correctedDistance
+      this.heightMultipliers[i] = baseMultiplier;
+    }
+  }
+  
+  /**
+   * Updates the canvas height and recalculates height multipliers
+   * @param {number} height - New canvas height
+   */
+  setCanvasHeight(height) {
+    if (this.canvasHeight !== height) {
+      this.canvasHeight = height;
+      this._updateHeightMultipliers();
+    }
   }
 
   /**
@@ -126,7 +193,7 @@ class CameraClass {
 
   /**
    * Updates the field of view dynamically
-   * Recalculates angle offsets and cos cache for fisheye correction
+   * Recalculates angle offsets, cos cache, and height multipliers
    * @param {number} newFov - New field of view in degrees
    */
   setFov(newFov) {
@@ -146,6 +213,9 @@ class CameraClass {
     for (let i = 0; i < this.rayCount; i++) {
       this.cosCache[i] = Math.cos(this.angleOffsets[i]);
     }
+    
+    // Recalculate height multipliers (depends on cos cache)
+    this._updateHeightMultipliers();
     
     // Update frustum parameters
     this._halfFovRad = halfFovRad;
@@ -202,16 +272,234 @@ class CameraClass {
   }
 
   /**
-   * Casts rays and detects intersections with boundaries.
-   * Optimized with frustum culling, distance culling, and typed arrays.
+   * Updates the spatial grid with new boundaries
+   * Only rebuilds if boundaries array has changed
    * @param {Array<Boundaries>} boundaries - Array of boundary objects
+   * @private
+   */
+  _updateSpatialGrid(boundaries) {
+    // Only rebuild if boundaries changed
+    if (boundaries !== this._lastBoundaries) {
+      this.spatialGrid.buildFromBoundaries(boundaries);
+      this._lastBoundaries = boundaries;
+      this._spatialGridDirty = false;
+    }
+  }
+
+  /**
+   * Processes a batch of rays (SIMD-like optimization)
+   * @param {number} startIdx - Starting ray index
+   * @param {number} batchSize - Number of rays to process
+   * @param {Array} opaqueBoundaries - Pre-filtered opaque boundaries (fallback)
+   * @param {Array} transparentBoundaries - Pre-filtered transparent boundaries
+   * @param {boolean} useSpatialGrid - Whether to use spatial grid
+   * @private
+   */
+  _processRayBatch(startIdx, batchSize, opaqueBoundaries, transparentBoundaries, useSpatialGrid) {
+    const scene = this._sceneResult;
+    const posX = this.pos.x;
+    const posY = this.pos.y;
+    
+    for (let b = 0; b < batchSize; b++) {
+      const i = startIdx + b;
+      if (i >= this.rayCount) break;
+      
+      const ray = this.rays[i];
+      const cosCorrection = this.cosCache[i];
+      const heightMult = this.heightMultipliers[i];
+      
+      let closestDist = Infinity;
+      let closestHit = null;
+      let textureX = 0;
+      let texture = null;
+      let color = null;
+      let hitBoundary = null;
+      
+      // Get boundaries to test - either from spatial grid or pre-filtered list
+      let boundariesToTest;
+      let boundaryCount;
+      
+      if (useSpatialGrid) {
+        // Use spatial grid DDA to get only relevant boundaries
+        boundaryCount = this.spatialGrid.getBoundariesAlongRayFast(
+          posX, posY,
+          ray.dir.x, ray.dir.y,
+          MAX_RENDER_DISTANCE,
+          this._rayBoundaryBuffer,
+          this._rayBoundarySet
+        );
+        boundariesToTest = this._rayBoundaryBuffer;
+      } else {
+        boundariesToTest = opaqueBoundaries;
+        boundaryCount = opaqueBoundaries.length;
+      }
+      
+      // Check opaque boundaries - find closest
+      for (let j = 0; j < boundaryCount; j++) {
+        const boundary = boundariesToTest[j];
+        
+        // Skip transparent in opaque pass
+        if (boundary.isTransparent) continue;
+        
+        const result = ray.cast(boundary);
+        
+        if (result) {
+          const { point, boundary: hitBound, angle, distance: rawDist } = result;
+          
+          // Calculate actual distance if not provided (curved walls provide it)
+          let dist;
+          if (rawDist !== undefined) {
+            dist = rawDist;
+          } else {
+            const dx = posX - point.x;
+            const dy = posY - point.y;
+            dist = Math.sqrt(dx * dx + dy * dy);
+          }
+          
+          // Apply fisheye correction
+          const correctedDist = dist * cosCorrection;
+
+          if (correctedDist < closestDist) {
+            closestDist = correctedDist;
+            closestHit = point;
+            texture = hitBound.texture;
+            color = hitBound.color || null;
+            hitBoundary = hitBound;
+            const texResult = this._calculateTextureX(hitBound, point, angle);
+            // Handle directional sprites that return an object
+            if (typeof texResult === 'object' && texResult.isDirectional) {
+              textureX = texResult.textureX;
+            } else {
+              textureX = texResult;
+            }
+          }
+        }
+      }
+      
+      // Collect transparent hits that are closer than the closest opaque hit
+      const transparentHits = [];
+      
+      if (transparentBoundaries.length > 0) {
+        for (let j = 0; j < transparentBoundaries.length; j++) {
+          const boundary = transparentBoundaries[j];
+          const result = ray.cast(boundary);
+          
+          if (result) {
+            const { point, boundary: hitBound, angle, distance: rawDist } = result;
+            
+            let dist;
+            if (rawDist !== undefined) {
+              dist = rawDist;
+            } else {
+              const dx = posX - point.x;
+              const dy = posY - point.y;
+              dist = Math.sqrt(dx * dx + dy * dy);
+            }
+            
+            const correctedDist = dist * cosCorrection;
+            
+            // Only include if closer than the closest opaque wall
+            if (correctedDist < closestDist) {
+              const texResult = this._calculateTextureX(hitBound, point, angle);
+              let hitTextureX;
+              let spriteTexture = null;
+              let mirrored = false;
+              
+              if (typeof texResult === 'object' && texResult.isDirectional) {
+                hitTextureX = texResult.textureX;
+                spriteTexture = texResult.spriteTexture || null;
+                mirrored = texResult.mirrored || false;
+              } else {
+                hitTextureX = texResult;
+              }
+              
+              transparentHits.push({
+                distance: correctedDist,
+                textureX: hitTextureX,
+                texture: hitBound.texture,
+                color: hitBound.color || null,
+                boundary: hitBound,
+                point,
+                spriteTexture,
+                mirrored
+              });
+            }
+          }
+        }
+        
+        // Sort by distance (closest first)
+        if (transparentHits.length > 1) {
+          transparentHits.sort((a, b) => a.distance - b.distance);
+        }
+      }
+      
+      // Update scene result (reuse objects to avoid allocation)
+      const sceneItem = scene[i];
+      sceneItem.distance = closestDist;
+      sceneItem.textureX = textureX;
+      sceneItem.texture = texture;
+      sceneItem.color = color;
+      sceneItem.boundary = hitBoundary;
+      sceneItem.transparentHits = transparentHits;
+      sceneItem.heightMultiplier = heightMult; // Pass to renderer
+    }
+  }
+
+  /**
+   * Casts rays and detects intersections with boundaries.
+   * Optimized with:
+   * - Spatial grid for O(log n) boundary lookup per ray
+   * - SIMD-like batch processing (4 rays at a time)
+   * - Precomputed height multipliers
+   * - Pre-allocated result arrays
+   * 
+   * @param {Array<Boundaries>} boundaries - Array of boundary objects
+   * @param {boolean} [useSpatialGrid=true] - Whether to use spatial grid optimization
    * @returns {Array<RayIntersection>} Scene intersection data
    */
-  spread(boundaries) {
+  spread(boundaries, useSpatialGrid = true) {
     const scene = this._sceneResult;
+    
+    // Update spatial grid if needed
+    if (useSpatialGrid) {
+      this._updateSpatialGrid(boundaries);
+    }
     
     // Pre-filter boundaries using frustum culling
     // Separate opaque and transparent for correct rendering order
+    const visibleBoundaries = [];
+    const transparentBoundaries = [];
+    
+    for (let i = 0; i < boundaries.length; i++) {
+      const boundary = boundaries[i];
+      if (this._isInViewFrustum(boundary)) {
+        if (boundary.isTransparent) {
+          transparentBoundaries.push(boundary);
+        } else if (!useSpatialGrid) {
+          // Only add to visible list if not using spatial grid
+          visibleBoundaries.push(boundary);
+        }
+      }
+    }
+    
+    // Process rays in batches (SIMD-like)
+    for (let i = 0; i < this.rayCount; i += RAY_BATCH_SIZE) {
+      this._processRayBatch(i, RAY_BATCH_SIZE, visibleBoundaries, transparentBoundaries, useSpatialGrid);
+    }
+    
+    return scene;
+  }
+
+  /**
+   * Legacy spread method for compatibility - processes rays individually
+   * @param {Array<Boundaries>} boundaries - Array of boundary objects
+   * @returns {Array<RayIntersection>} Scene intersection data
+   * @deprecated Use spread() instead
+   */
+  spreadLegacy(boundaries) {
+    const scene = this._sceneResult;
+    
+    // Pre-filter boundaries using frustum culling
     const visibleBoundaries = [];
     const transparentBoundaries = [];
     
