@@ -254,6 +254,7 @@ const inputHandler = new InputHandler(main_canvas, {
     if (gameState.showInstructions && ActiveMap.mazeData) return;
     if (settingsMenu.visible) return;
     player.updateViewDirection(player.viewDirection + (movementX * ControlsConfig.getSensitivity()));
+    player.updatePitch(movementY);
   },
 
   onJump: () => player.jump(),
@@ -568,7 +569,7 @@ function drawOptimizationStats(ctx, width, height) {
   ctx.fillText(`Pos: (${player.pos.x.toFixed(1)}, ${player.pos.y.toFixed(1)})`, x, y);
   ctx.fillText(`Dir: ${player.viewDirection.toFixed(1)}°`, x + 165, y);
   y += lineHeight;
-  ctx.fillText(`Eye: ${player.eyeHeight.toFixed(3)}`, x, y);
+  ctx.fillText(`Eye: ${player.eyeHeight.toFixed(3)}  Pitch: ${player.pitch.toFixed(3)}`, x, y);
   
   // Player state indicators
   let stateX = x + 90;
@@ -846,8 +847,8 @@ function draw() {
   // Update performance tracking (lightweight, runs every frame)
   updatePerformanceTracking();
 
-  // Redraw background with parallax
-  drawBackground(background_ctx, background_canvas.height, background_canvas.width, player.eyeHeight);
+  // Redraw background with parallax and pitch
+  drawBackground(background_ctx, background_canvas.height, background_canvas.width, player.eyeHeight, player.pitch);
 
   // Update input state to player
   const moveState = inputHandler.getMoveState();
@@ -870,7 +871,7 @@ function draw() {
     });
     // Render scene but don't update
     const scene = player.getScene(boundaries);
-    render3D(scene, player.eyeHeight);
+    render3D(scene, player.eyeHeight, player.pitch);
     // Update fog of war even during instructions so player sees starting area
     fogOfWar.setBoundaries(boundaries);
     fogOfWar.updateExploration(player.pos.x, player.pos.y, player.viewDirection, player.camera.fov);
@@ -890,7 +891,7 @@ function draw() {
     });
     // Render scene but don't update
     const scene = player.getScene(boundaries);
-    render3D(scene, player.eyeHeight);
+    render3D(scene, player.eyeHeight, player.pitch);
     drawMinimap(minimap_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null, fogOfWar);
     
     detectionTimer.setValue(gameState.detectionTimer);
@@ -910,7 +911,7 @@ function draw() {
     });
     // Render scene but don't update
     const scene = player.getScene(boundaries);
-    render3D(scene, player.eyeHeight);
+    render3D(scene, player.eyeHeight, player.pitch);
     drawMinimap(minimap_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null, fogOfWar);
     
     winScreen.draw(main_ctx, main_canvas.width, main_canvas.height);
@@ -936,7 +937,7 @@ function draw() {
 
   // Render scene
   const scene = player.getScene(boundaries);
-  render3D(scene, player.eyeHeight);
+  render3D(scene, player.eyeHeight, player.pitch);
   player.update(deltaTime, boundaries);
 
   // Check if player reached goal zone

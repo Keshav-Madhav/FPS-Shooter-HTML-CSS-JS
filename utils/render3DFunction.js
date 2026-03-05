@@ -27,6 +27,7 @@ const BRIGHTNESS_SCALE_FACTOR = RenderConfig.brightnessScaleFactor;
 const DARKNESS_EXPONENT = RenderConfig.darknessExponent;
 const SMOOTHING_RADIUS = RenderConfig.smoothingRadius;
 const PARALLAX_STRENGTH = RenderConfig.parallaxStrength;
+const PITCH_STRENGTH = RenderConfig.pitchStrength;
 
 // Distance threshold for LOD (Level of Detail) optimization
 const LOD_DISTANCE_THRESHOLD = 500; // Beyond this, use simplified rendering
@@ -310,8 +311,9 @@ function setFloorCastingParams(params) {
  * @param {RayIntersection[]} scene - An array of intersection data for each ray.
  * @param {number} [eyeHeight=0] - Vertical camera position (-1 to 1, 0 = center)
  *                                  Positive = looking from above, negative = from below
+ * @param {number} [pitch=0] - Vertical look angle (-1 to 1, positive = looking up)
  */
-function render3D(scene, eyeHeight = 0) {
+function render3D(scene, eyeHeight = 0, pitch = 0) {
   const sceneLength = scene.length;
   
   // Update dimension cache and allocate buffers
@@ -324,6 +326,10 @@ function render3D(scene, eyeHeight = 0) {
     zBuffer[i] = dist; // Store distance for occlusion testing
   }
   
+  // Calculate pitch offset (Y-shearing): shifts the horizon line
+  const pitchOffset = pitch * cachedHeight * PITCH_STRENGTH;
+  const horizonY = cachedHalfHeight + pitchOffset;
+
   // Floor and ceiling pass: Render before walls so walls draw on top
   if (_floorCastEnabled && floorCaster.enabled) {
     floorCaster.updateDimensions(cachedWidth, cachedHeight);
@@ -334,7 +340,8 @@ function render3D(scene, eyeHeight = 0) {
       _playerY,
       _playerAngle,
       _playerFov,
-      eyeHeight
+      eyeHeight,
+      pitchOffset
     );
   }
   
@@ -391,9 +398,9 @@ function render3D(scene, eyeHeight = 0) {
     // Positive eyeHeight (jumping) = walls shift down, negative (crouching) = walls shift up
     // The offset is proportional to wallHeight, so close walls move more than distant ones
     const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
-    const y = cachedHalfHeight - wallHeight * 0.5 + verticalOffset;
+    const y = horizonY - wallHeight * 0.5 + verticalOffset;
     const x = i * sliceWidth;
-    
+
     const isTransparent = boundary && boundary.isTransparent;
     
     renderWallSlice(
@@ -456,7 +463,7 @@ function render3D(scene, eyeHeight = 0) {
     
     // Distance-based parallax for transparent walls too
     const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
-    const y = cachedHalfHeight - wallHeight * 0.5 + verticalOffset;
+    const y = horizonY - wallHeight * 0.5 + verticalOffset;
     const x = rayIndex * sliceWidth;
     
     // Calculate brightness for this distance

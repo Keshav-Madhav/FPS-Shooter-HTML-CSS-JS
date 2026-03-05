@@ -2,7 +2,7 @@ import Boundaries from "../classes/BoundariesClass.js";
 import Player from "../classes/UserClass.js";
 import RayClass from "../classes/RayClass.js";
 import { DEG_TO_RAD, fastSin, fastCos } from "./mathLUT.js";
-import { BackgroundConfig, DetectionConfig, EnemyConfig } from "../config/GameConfig.js";
+import { BackgroundConfig, DetectionConfig, EnemyConfig, RenderConfig } from "../config/GameConfig.js";
 
 /**
  * Resizes all canvas elements in the canvasArray to maintain the specified aspect ratio.
@@ -35,17 +35,19 @@ const BG_PARALLAX_STRENGTH = BackgroundConfig.parallaxStrength;
  * @param {number} height - Canvas height
  * @param {number} width - Canvas width
  * @param {number} [eyeHeight=0] - Vertical camera position for parallax
+ * @param {number} [pitch=0] - Vertical look angle (-1 to 1, positive = looking up)
  */
-function drawBackground(background_ctx, height, width, eyeHeight = 0) {
+function drawBackground(background_ctx, height, width, eyeHeight = 0, pitch = 0) {
   const topStartLuminosity = 55;
   const topEndLuminosity = 20;
   const bottomStartLuminosity = 40;
   const bottomEndLuminosity = 10;
-  
-  // Calculate horizon offset based on eye height
+
+  // Calculate horizon offset based on eye height and pitch
   // Positive eyeHeight (jumping) = horizon moves down, shows more sky
   // Negative eyeHeight (crouching) = horizon moves up, shows more floor
-  const horizonOffset = eyeHeight * height * BG_PARALLAX_STRENGTH;
+  // Positive pitch (looking up) = horizon moves down
+  const horizonOffset = eyeHeight * height * BG_PARALLAX_STRENGTH + pitch * height * RenderConfig.pitchStrength;
   const horizonY = height * 0.5 + horizonOffset;
 
   background_ctx.clearRect(0, 0, width, height);

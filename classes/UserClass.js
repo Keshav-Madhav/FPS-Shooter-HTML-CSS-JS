@@ -2,6 +2,7 @@ import CameraClass from './CameraClass.js';
 import Boundaries from './BoundariesClass.js';
 import { DEG_TO_RAD, HALF_PI, TWO_PI, fastSin, fastCos, normalizeAngle } from '../utils/mathLUT.js';
 import { PlayerConfig } from '../config/GameConfig.js';
+import { ControlsConfig } from '../config/ControlsConfig.js';
 
 /**
  * @typedef {Object} RayIntersection
@@ -86,6 +87,9 @@ class Player {
     this.lastJumpTime = 0; // Timestamp of last jump
     this.recentJumpWindow = 0.25; // Time window in seconds to consider "recently jumped"
     
+    // Vertical look (pitch) state
+    this.pitch = 0; // -1 to 1 range (0 = level, positive = looking up, negative = looking down)
+
     // FOV state
     this.baseFov = fov; // Base FOV
     this.currentFov = fov; // Current interpolated FOV
@@ -626,6 +630,20 @@ class Player {
     if (angleDist < 0) angleDist += TWO_PI;
 
     return angleDist <= arcRange + 0.01;
+  }
+
+  /**
+   * Updates pitch from mouse Y movement
+   * Uses vertical sensitivity from ControlsConfig (independent of horizontal)
+   * @param {number} deltaY - Raw mouse movementY
+   */
+  updatePitch(deltaY) {
+    const vertSens = ControlsConfig.getVerticalSensitivity();
+    const maxPitch = ControlsConfig.getMaxPitch();
+    this.pitch -= deltaY * vertSens;
+    // Clamp to limits
+    if (this.pitch > maxPitch) this.pitch = maxPitch;
+    if (this.pitch < -maxPitch) this.pitch = -maxPitch;
   }
 
   /**

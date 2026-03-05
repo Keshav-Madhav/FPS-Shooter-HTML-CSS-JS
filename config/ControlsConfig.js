@@ -3,7 +3,7 @@
  * Supports saving/loading from localStorage and runtime rebinding
  */
 
-import { InputConfig } from './GameConfig.js';
+import { InputConfig, PlayerConfig } from './GameConfig.js';
 
 // Storage key for localStorage
 const STORAGE_KEY = 'fps_shooter_controls';
@@ -11,6 +11,8 @@ const STORAGE_KEY = 'fps_shooter_controls';
 // Default key bindings (from InputConfig)
 const DEFAULT_KEYS = { ...InputConfig.keys };
 const DEFAULT_SENSITIVITY = InputConfig.mouseSensitivity;
+const DEFAULT_VERTICAL_SENSITIVITY = PlayerConfig.verticalSensitivity;
+const DEFAULT_MAX_PITCH = PlayerConfig.maxPitch;
 
 /**
  * ControlsConfig singleton - manages all input configuration
@@ -20,7 +22,9 @@ class ControlsConfigManager {
     // Current bindings (cloned from defaults)
     this._keys = this._normalizeAllKeys(this._deepClone(DEFAULT_KEYS));
     this._mouseSensitivity = DEFAULT_SENSITIVITY;
-    
+    this._verticalSensitivity = DEFAULT_VERTICAL_SENSITIVITY;
+    this._maxPitch = DEFAULT_MAX_PITCH;
+
     // Listeners for config changes
     this._listeners = [];
     
@@ -92,6 +96,12 @@ class ControlsConfigManager {
         if (typeof data.mouseSensitivity === 'number') {
           this._mouseSensitivity = data.mouseSensitivity;
         }
+        if (typeof data.verticalSensitivity === 'number') {
+          this._verticalSensitivity = data.verticalSensitivity;
+        }
+        if (typeof data.maxPitch === 'number') {
+          this._maxPitch = data.maxPitch;
+        }
       }
     } catch (e) {
       console.warn('Failed to load controls config:', e);
@@ -106,7 +116,9 @@ class ControlsConfigManager {
     try {
       const data = {
         keys: this._keys,
-        mouseSensitivity: this._mouseSensitivity
+        mouseSensitivity: this._mouseSensitivity,
+        verticalSensitivity: this._verticalSensitivity,
+        maxPitch: this._maxPitch
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
@@ -276,11 +288,65 @@ class ControlsConfigManager {
   }
 
   /**
+   * Gets the vertical (pitch) sensitivity
+   * @returns {number} Vertical sensitivity value
+   */
+  getVerticalSensitivity() {
+    return this._verticalSensitivity;
+  }
+
+  /**
+   * Sets the vertical (pitch) sensitivity
+   * @param {number} value - New vertical sensitivity value
+   */
+  setVerticalSensitivity(value) {
+    this._verticalSensitivity = Math.max(0.001, Math.min(0.02, value));
+    this._save();
+    this._notifyListeners();
+  }
+
+  /**
+   * Adjusts vertical sensitivity by a delta
+   * @param {number} delta - Amount to adjust (-1 or 1)
+   */
+  adjustVerticalSensitivity(delta) {
+    this.setVerticalSensitivity(this._verticalSensitivity + delta * 0.001);
+  }
+
+  /**
+   * Gets the max pitch (vertical look range)
+   * @returns {number} Max pitch value (0.2 to 1.0)
+   */
+  getMaxPitch() {
+    return this._maxPitch;
+  }
+
+  /**
+   * Sets the max pitch (vertical look range)
+   * @param {number} value - New max pitch value
+   */
+  setMaxPitch(value) {
+    this._maxPitch = Math.max(0.2, Math.min(1.0, value));
+    this._save();
+    this._notifyListeners();
+  }
+
+  /**
+   * Adjusts max pitch by a delta
+   * @param {number} delta - Amount to adjust (-1 or 1)
+   */
+  adjustMaxPitch(delta) {
+    this.setMaxPitch(this._maxPitch + delta * 0.05);
+  }
+
+  /**
    * Resets all settings to defaults
    */
   resetToDefaults() {
     this._keys = this._normalizeAllKeys(this._deepClone(DEFAULT_KEYS));
     this._mouseSensitivity = DEFAULT_SENSITIVITY;
+    this._verticalSensitivity = DEFAULT_VERTICAL_SENSITIVITY;
+    this._maxPitch = DEFAULT_MAX_PITCH;
     this._save();
     this._notifyListeners();
   }

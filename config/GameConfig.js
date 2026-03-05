@@ -13,6 +13,7 @@ export const RenderConfig = {
   darknessExponent: 2.0,
   maxRenderDistance: 2000,
   parallaxStrength: 0.5,
+  pitchStrength: 0.5,
   pixelsPerWorldUnit: 4
 };
 
@@ -76,7 +77,11 @@ export const PlayerConfig = {
   baseFov: 80,
   slowFov: 83,
   fastFov: 77,
-  fovLerpSpeed: 0.15
+  fovLerpSpeed: 0.15,
+
+  // Vertical look (pitch)
+  verticalSensitivity: 0.005,
+  maxPitch: 0.75
 };
 
 // ===========================================

@@ -59,10 +59,24 @@ class SettingsMenu {
           
           <div class="tab-content hidden" id="sensitivity-tab">
             <div class="sensitivity-control">
-              <label>Mouse Sensitivity</label>
+              <label>Horizontal Sensitivity</label>
               <div class="sensitivity-slider-container">
                 <input type="range" id="sensitivity-slider" min="1" max="200" value="20">
                 <span class="sensitivity-value" id="sensitivity-value">0.20</span>
+              </div>
+            </div>
+            <div class="sensitivity-control" style="margin-top: 16px;">
+              <label>Vertical Sensitivity</label>
+              <div class="sensitivity-slider-container">
+                <input type="range" id="vertical-sensitivity-slider" min="1" max="200" value="50">
+                <span class="sensitivity-value" id="vertical-sensitivity-value">0.005</span>
+              </div>
+            </div>
+            <div class="sensitivity-control" style="margin-top: 16px;">
+              <label>Vertical Look Range</label>
+              <div class="sensitivity-slider-container">
+                <input type="range" id="max-pitch-slider" min="20" max="100" value="75">
+                <span class="sensitivity-value" id="max-pitch-value">75%</span>
               </div>
             </div>
           </div>
@@ -85,6 +99,10 @@ class SettingsMenu {
     this.controlsList = this.overlay.querySelector('#controls-list');
     this.sensitivitySlider = this.overlay.querySelector('#sensitivity-slider');
     this.sensitivityValue = this.overlay.querySelector('#sensitivity-value');
+    this.verticalSensitivitySlider = this.overlay.querySelector('#vertical-sensitivity-slider');
+    this.verticalSensitivityValue = this.overlay.querySelector('#vertical-sensitivity-value');
+    this.maxPitchSlider = this.overlay.querySelector('#max-pitch-slider');
+    this.maxPitchValue = this.overlay.querySelector('#max-pitch-value');
     this.tabButtons = this.overlay.querySelectorAll('.tab-btn');
     this.tabContents = this.overlay.querySelectorAll('.tab-content');
   }
@@ -344,7 +362,9 @@ class SettingsMenu {
         gap: 16px;
       }
       
-      #sensitivity-slider {
+      #sensitivity-slider,
+      #vertical-sensitivity-slider,
+      #max-pitch-slider {
         flex: 1;
         height: 8px;
         -webkit-appearance: none;
@@ -353,8 +373,10 @@ class SettingsMenu {
         border-radius: 4px;
         outline: none;
       }
-      
-      #sensitivity-slider::-webkit-slider-thumb {
+
+      #sensitivity-slider::-webkit-slider-thumb,
+      #vertical-sensitivity-slider::-webkit-slider-thumb,
+      #max-pitch-slider::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
         width: 20px;
@@ -364,12 +386,16 @@ class SettingsMenu {
         cursor: pointer;
         transition: transform 0.1s;
       }
-      
-      #sensitivity-slider::-webkit-slider-thumb:hover {
+
+      #sensitivity-slider::-webkit-slider-thumb:hover,
+      #vertical-sensitivity-slider::-webkit-slider-thumb:hover,
+      #max-pitch-slider::-webkit-slider-thumb:hover {
         transform: scale(1.1);
       }
-      
-      #sensitivity-slider::-moz-range-thumb {
+
+      #sensitivity-slider::-moz-range-thumb,
+      #vertical-sensitivity-slider::-moz-range-thumb,
+      #max-pitch-slider::-moz-range-thumb {
         width: 20px;
         height: 20px;
         background: #e94560;
@@ -450,10 +476,24 @@ class SettingsMenu {
       });
     });
     
-    // Sensitivity slider
+    // Sensitivity slider (horizontal)
     this.sensitivitySlider.addEventListener('input', (e) => {
       const value = parseInt(e.target.value) / 100;
       ControlsConfig.setSensitivity(value);
+      this._updateSensitivityDisplay();
+    });
+
+    // Vertical sensitivity slider
+    this.verticalSensitivitySlider.addEventListener('input', (e) => {
+      const value = parseInt(e.target.value) / 10000;
+      ControlsConfig.setVerticalSensitivity(value);
+      this._updateSensitivityDisplay();
+    });
+
+    // Max pitch slider
+    this.maxPitchSlider.addEventListener('input', (e) => {
+      const value = parseInt(e.target.value) / 100;
+      ControlsConfig.setMaxPitch(value);
       this._updateSensitivityDisplay();
     });
     
@@ -633,6 +673,14 @@ class SettingsMenu {
     const sensitivity = ControlsConfig.getSensitivity();
     this.sensitivitySlider.value = Math.round(sensitivity * 100);
     this.sensitivityValue.textContent = sensitivity.toFixed(2);
+
+    const vertSens = ControlsConfig.getVerticalSensitivity();
+    this.verticalSensitivitySlider.value = Math.round(vertSens * 10000);
+    this.verticalSensitivityValue.textContent = vertSens.toFixed(4);
+
+    const maxPitch = ControlsConfig.getMaxPitch();
+    this.maxPitchSlider.value = Math.round(maxPitch * 100);
+    this.maxPitchValue.textContent = Math.round(maxPitch * 100) + '%';
   }
 
   /**

@@ -198,8 +198,9 @@ class FloorCaster {
    * @param {number} playerAngle - Player view angle in radians
    * @param {number} fov - Field of view in radians
    * @param {number} [eyeHeight=0] - Eye height for parallax
+   * @param {number} [pitchOffset=0] - Vertical pitch offset in pixels (from Y-shearing)
    */
-  render(ctx, scene, playerX, playerY, playerAngle, fov, eyeHeight = 0) {
+  render(ctx, scene, playerX, playerY, playerAngle, fov, eyeHeight = 0, pitchOffset = 0) {
     if (!this.enabled) return;
     
     this._animTime = performance.now();
@@ -225,14 +226,17 @@ class FloorCaster {
       };
     }
     
+    // Shifted horizon from pitch
+    const horizonY = halfHeight + pitchOffset;
+
     // Render floor (below horizon)
     if (this.enabled) {
-      this._renderFloor(ctx, scene, playerX, playerY, rayDirs, halfHeight, width, height, baseHeightMultiplier, eyeHeight);
+      this._renderFloor(ctx, scene, playerX, playerY, rayDirs, horizonY, width, height, baseHeightMultiplier, eyeHeight);
     }
-    
+
     // Render ceiling (above horizon)
     if (this.ceilingEnabled) {
-      this._renderCeiling(ctx, scene, playerX, playerY, rayDirs, halfHeight, width, height, baseHeightMultiplier, eyeHeight);
+      this._renderCeiling(ctx, scene, playerX, playerY, rayDirs, horizonY, width, height, baseHeightMultiplier, eyeHeight);
     }
   }
   
@@ -241,29 +245,29 @@ class FloorCaster {
    * Row-based rendering with proper wall occlusion
    * @private
    */
-  _renderFloor(ctx, scene, playerX, playerY, rayDirs, halfHeight, width, height, baseHeightMultiplier, eyeHeight) {
+  _renderFloor(ctx, scene, playerX, playerY, rayDirs, horizonY, width, height, baseHeightMultiplier, eyeHeight) {
     const sceneLength = scene.length;
     const colWidth = width / sceneLength;
-    
+
     // Pre-calculate wall bottom positions for each column
     const wallBottoms = new Float32Array(sceneLength);
     for (let col = 0; col < sceneLength; col++) {
       const wallDist = scene[col].distance;
       if (wallDist === Infinity || wallDist <= 0) {
-        wallBottoms[col] = halfHeight;
+        wallBottoms[col] = horizonY;
       } else {
         const wallHeight = baseHeightMultiplier / wallDist;
         const wallParallaxOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
-        const wallY = halfHeight - wallHeight * 0.5 + wallParallaxOffset;
+        const wallY = horizonY - wallHeight * 0.5 + wallParallaxOffset;
         wallBottoms[col] = wallY + wallHeight;
       }
     }
-    
+
     // Render floor row by row (every 2 pixels for performance)
     const rowStep = 2;
-    
-    for (let screenY = Math.floor(halfHeight) + 1; screenY < height; screenY += rowStep) {
-      const rowFromCenter = screenY - halfHeight;
+
+    for (let screenY = Math.floor(horizonY) + 1; screenY < height; screenY += rowStep) {
+      const rowFromCenter = screenY - horizonY;
       if (rowFromCenter <= 0) continue;
       
       // Calculate floor distance and brightness for this row
@@ -374,28 +378,28 @@ class FloorCaster {
    * Row-based rendering with proper wall occlusion
    * @private
    */
-  _renderCeiling(ctx, scene, playerX, playerY, rayDirs, halfHeight, width, height, baseHeightMultiplier, eyeHeight) {
+  _renderCeiling(ctx, scene, playerX, playerY, rayDirs, horizonY, width, height, baseHeightMultiplier, eyeHeight) {
     const sceneLength = scene.length;
     const colWidth = width / sceneLength;
-    
+
     // Pre-calculate wall top positions for each column
     const wallTops = new Float32Array(sceneLength);
     for (let col = 0; col < sceneLength; col++) {
       const wallDist = scene[col].distance;
       if (wallDist === Infinity || wallDist <= 0) {
-        wallTops[col] = halfHeight;
+        wallTops[col] = horizonY;
       } else {
         const wallHeight = baseHeightMultiplier / wallDist;
         const wallParallaxOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
-        wallTops[col] = halfHeight - wallHeight * 0.5 + wallParallaxOffset;
+        wallTops[col] = horizonY - wallHeight * 0.5 + wallParallaxOffset;
       }
     }
-    
+
     // Render ceiling row by row (every 2 pixels for performance)
     const rowStep = 2;
-    
-    for (let screenY = Math.floor(halfHeight) - 1; screenY >= 0; screenY -= rowStep) {
-      const rowFromCenter = halfHeight - screenY;
+
+    for (let screenY = Math.floor(horizonY) - 1; screenY >= 0; screenY -= rowStep) {
+      const rowFromCenter = horizonY - screenY;
       if (rowFromCenter <= 0) continue;
       
       // Calculate ceiling distance and brightness for this row
