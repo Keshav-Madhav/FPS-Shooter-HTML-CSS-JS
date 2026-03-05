@@ -90,6 +90,10 @@ class Player {
     // Vertical look (pitch) state
     this.pitch = 0; // -1 to 1 range (0 = level, positive = looking up, negative = looking down)
 
+    // Flashlight state
+    this.flashlightOn = true; // starts on
+    this.batteryLevel = 1.0; // 0-1
+
     // FOV state
     this.baseFov = fov; // Base FOV
     this.currentFov = fov; // Current interpolated FOV
@@ -630,6 +634,32 @@ class Player {
     if (angleDist < 0) angleDist += TWO_PI;
 
     return angleDist <= arcRange + 0.01;
+  }
+
+  /**
+   * Toggles the flashlight on/off
+   */
+  toggleFlashlight() {
+    if (this.batteryLevel <= 0) return; // can't turn on with no battery
+    this.flashlightOn = !this.flashlightOn;
+  }
+
+  /**
+   * Updates flashlight battery
+   * @param {number} deltaTime - Frame delta
+   */
+  updateFlashlight(deltaTime) {
+    const dt = deltaTime / 120; // normalize to seconds (deltaTime is normalized to 120fps)
+    if (this.flashlightOn) {
+      this.batteryLevel -= PlayerConfig.flashlightDrainRate * dt;
+      if (this.batteryLevel <= 0) {
+        this.batteryLevel = 0;
+        this.flashlightOn = false; // auto-off when dead
+      }
+    } else {
+      this.batteryLevel += PlayerConfig.flashlightRechargeRate * dt;
+      if (this.batteryLevel > 1) this.batteryLevel = 1;
+    }
   }
 
   /**

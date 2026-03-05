@@ -194,6 +194,11 @@ class InputHandler {
       if (this.callbacks.onPathReveal) this.callbacks.onPathReveal();
     }
 
+    // Flashlight toggle
+    if (this._matchesKey(key, 'flashlight')) {
+      if (this.callbacks.onFlashlightToggle) this.callbacks.onFlashlightToggle();
+    }
+
     // Map selector
     if (this._matchesKey(key, 'mapSelector')) {
       e.preventDefault();

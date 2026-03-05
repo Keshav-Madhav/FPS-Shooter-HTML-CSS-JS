@@ -1,4 +1,5 @@
 import { RenderConfig } from "../config/GameConfig.js";
+import lightingSystem from "./LightingSystem.js";
 
 /**
  * FloorCaster - Performant floor and ceiling rendering with visual depth
@@ -53,6 +54,9 @@ class FloorCaster {
     
     // Animation time for effects
     this._animTime = 0;
+
+    // Whether to use dynamic lighting system
+    this.lightingEnabled = false;
   }
   
   /**
@@ -263,26 +267,32 @@ class FloorCaster {
       }
     }
 
-    // Render floor row by row (every 2 pixels for performance)
-    const rowStep = 2;
+    // When lighting is enabled, use larger steps for performance
+    const rowStep = this.lightingEnabled ? 3 : 2;
+    // Sample lighting every Nth column (reuse for adjacent columns)
+    const lightSampleStep = this.lightingEnabled ? 4 : 1;
 
     for (let screenY = Math.floor(horizonY) + 1; screenY < height; screenY += rowStep) {
       const rowFromCenter = screenY - horizonY;
       if (rowFromCenter <= 0) continue;
-      
+
       // Calculate floor distance and brightness for this row
       const parallaxFactor = 0.5 + eyeHeight * PARALLAX_STRENGTH;
       const perpDist = (baseHeightMultiplier * parallaxFactor) / rowFromCenter;
-      
+
       const distRatio = Math.min(perpDist / MAX_FLOOR_DISTANCE, 2.0);
       const brightness = Math.max(0.08, 1 - distRatio * 0.45);
-      
+
       const isFog = perpDist > MAX_FLOOR_DISTANCE;
-      
+
+      // For distant rows with lighting, skip per-pixel calculation (too far to see detail)
+      const skipLightCalc = this.lightingEnabled && perpDist > 500;
+
       // Draw spans across this row
       let spanStart = -1;
       let spanColor = null;
-      
+      let cachedLitBrightness = 0;
+
       for (let col = 0; col < sceneLength; col++) {
         // Check if wall occludes this pixel
         if (screenY < wallBottoms[col]) {
@@ -294,37 +304,53 @@ class FloorCaster {
           }
           continue;
         }
-        
+
         // Calculate color for this pixel
         let color;
-        
+
         if (isFog) {
           const { h, s, l } = this.floorColor;
-          color = `hsl(${h}, ${s * 0.3}%, ${l * brightness * 0.5}%)`;
+          const fogBright = this.lightingEnabled ? 0.02 : brightness * 0.5;
+          color = `hsl(${h}, ${s * 0.3}%, ${l * fogBright}%)`;
         } else {
           // Calculate world position
           const rayDir = rayDirs[col];
           const rayDist = perpDist / rayDir.cos;
           const worldX = playerX + rayDir.x * rayDist;
           const worldY = playerY + rayDir.y * rayDist;
-          
+
+          // Use dynamic lighting if enabled
+          let pixelBrightness = brightness;
+          if (this.lightingEnabled) {
+            if (skipLightCalc) {
+              pixelBrightness = 0.02;
+            } else if (col % lightSampleStep === 0) {
+              const litBrightness = lightingSystem.calculateBrightnessOnly(worldX, worldY);
+              const distFog = perpDist < 50 ? 1 : Math.min(1, 200 / perpDist);
+              cachedLitBrightness = litBrightness * distFog;
+              pixelBrightness = cachedLitBrightness;
+            } else {
+              pixelBrightness = cachedLitBrightness;
+            }
+          }
+
           // Check for zone
           const zone = this.getZoneAt(worldX, worldY);
-          
+
           if (zone) {
-            color = this._getZoneColor(zone, brightness);
+            color = this._getZoneColor(zone, pixelBrightness);
           } else {
             // Checkerboard
             const tileX = Math.floor(worldX / FLOOR_TILE_SIZE);
             const tileY = Math.floor(worldY / FLOOR_TILE_SIZE);
             const isChecker = (tileX + tileY) % 2 === 0;
-            
+
             const { h, s, l } = this.floorColor;
             const checkerMod = this.useCheckerboard && isChecker ? this.checkerboardDarkness : 1;
-            color = `hsl(${h}, ${s}%, ${l * brightness * checkerMod}%)`;
+            color = `hsl(${h}, ${s}%, ${l * pixelBrightness * checkerMod}%)`;
           }
         }
-        
+
         // Start new span or continue if same color
         if (spanStart < 0) {
           spanStart = col;
@@ -337,7 +363,7 @@ class FloorCaster {
           spanColor = color;
         }
       }
-      
+
       // Draw final span
       if (spanStart >= 0) {
         ctx.fillStyle = spanColor;
@@ -395,26 +421,29 @@ class FloorCaster {
       }
     }
 
-    // Render ceiling row by row (every 2 pixels for performance)
-    const rowStep = 2;
+    // When lighting is enabled, use larger steps for performance
+    const rowStep = this.lightingEnabled ? 3 : 2;
+    const lightSampleStep = this.lightingEnabled ? 4 : 1;
 
     for (let screenY = Math.floor(horizonY) - 1; screenY >= 0; screenY -= rowStep) {
       const rowFromCenter = horizonY - screenY;
       if (rowFromCenter <= 0) continue;
-      
+
       // Calculate ceiling distance and brightness for this row
       const parallaxFactor = 0.5 - eyeHeight * PARALLAX_STRENGTH;
       const perpDist = (baseHeightMultiplier * Math.abs(parallaxFactor)) / rowFromCenter;
-      
+
       const distRatio = Math.min(perpDist / MAX_FLOOR_DISTANCE, 2.0);
       const brightness = Math.max(0.12, 1 - distRatio * 0.35);
-      
+
       const isFog = perpDist > MAX_FLOOR_DISTANCE;
-      
+      const skipLightCalc = this.lightingEnabled && perpDist > 500;
+
       // Draw spans across this row
       let spanStart = -1;
       let spanColor = null;
-      
+      let cachedLitBrightness = 0;
+
       for (let col = 0; col < sceneLength; col++) {
         // Check if wall occludes this pixel
         if (screenY > wallTops[col]) {
@@ -426,30 +455,46 @@ class FloorCaster {
           }
           continue;
         }
-        
+
         // Calculate color for this pixel
         let color;
-        
+
         if (isFog) {
           const { h, s, l } = this.ceilingColor;
-          color = `hsl(${h}, ${s * 0.3}%, ${l * brightness * 0.6}%)`;
+          const fogBright = this.lightingEnabled ? 0.02 : brightness * 0.6;
+          color = `hsl(${h}, ${s * 0.3}%, ${l * fogBright}%)`;
         } else {
           // Calculate world position for checkerboard
           const rayDir = rayDirs[col];
           const rayDist = perpDist / rayDir.cos;
           const worldX = playerX + rayDir.x * rayDist;
           const worldY = playerY + rayDir.y * rayDist;
-          
+
+          // Use dynamic lighting if enabled
+          let pixelBrightness = brightness;
+          if (this.lightingEnabled) {
+            if (skipLightCalc) {
+              pixelBrightness = 0.02;
+            } else if (col % lightSampleStep === 0) {
+              const litBrightness = lightingSystem.calculateBrightnessOnly(worldX, worldY);
+              const distFog = perpDist < 50 ? 1 : Math.min(1, 200 / perpDist);
+              cachedLitBrightness = litBrightness * distFog;
+              pixelBrightness = cachedLitBrightness;
+            } else {
+              pixelBrightness = cachedLitBrightness;
+            }
+          }
+
           // Checkerboard pattern (same tile size as floor)
           const tileX = Math.floor(worldX / FLOOR_TILE_SIZE);
           const tileY = Math.floor(worldY / FLOOR_TILE_SIZE);
           const isChecker = (tileX + tileY) % 2 === 0;
-          
+
           const { h, s, l } = this.ceilingColor;
           const checkerMod = this.useCheckerboard && isChecker ? this.checkerboardDarkness : 1;
-          color = `hsl(${h}, ${s}%, ${l * brightness * checkerMod}%)`;
+          color = `hsl(${h}, ${s}%, ${l * pixelBrightness * checkerMod}%)`;
         }
-        
+
         // Start new span or continue if same color
         if (spanStart < 0) {
           spanStart = col;
@@ -462,7 +507,7 @@ class FloorCaster {
           spanColor = color;
         }
       }
-      
+
       // Draw final span
       if (spanStart >= 0) {
         ctx.fillStyle = spanColor;

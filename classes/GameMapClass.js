@@ -57,6 +57,10 @@ class GameMap {
     // Custom minimap settings (null = use defaults)
     this.minimapSettings = null;
     
+    // Light sources for the map
+    /** @type {Array<{x: number, y: number, radius: number, intensity: number, color: {r:number,g:number,b:number}|null, flicker: boolean}>} */
+    this.lights = [];
+
     // Maze-specific data (null for non-maze maps)
     this.mazeData = null;
   }
@@ -127,6 +131,27 @@ class GameMap {
     const dx = x - this.goalZone.x;
     const dy = y - this.goalZone.y;
     return (dx * dx + dy * dy) <= (this.goalZone.radius * this.goalZone.radius);
+  }
+
+  /**
+   * Add a light source to the map
+   * @param {Object} light - Light data
+   * @param {number} light.x - World X
+   * @param {number} light.y - World Y
+   * @param {number} [light.radius=150] - Max distance
+   * @param {number} [light.intensity=0.8] - Brightness 0-1
+   * @param {{r:number,g:number,b:number}} [light.color] - Light color
+   * @param {boolean} [light.flicker=true] - Whether it flickers
+   */
+  addLight(light) {
+    this.lights.push({
+      x: light.x,
+      y: light.y,
+      radius: light.radius ?? 150,
+      intensity: light.intensity ?? 0.8,
+      color: light.color || null,
+      flicker: light.flicker ?? true
+    });
   }
 
   /**

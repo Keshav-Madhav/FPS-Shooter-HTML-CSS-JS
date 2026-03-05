@@ -1,5 +1,6 @@
 import Boundaries from "../classes/BoundariesClass.js";
 import floorCaster from "./FloorCaster.js";
+import lightingSystem from "./LightingSystem.js";
 import { RenderConfig } from "../config/GameConfig.js";
 
 /**
@@ -98,6 +99,13 @@ function calculateBrightness(distance) {
  * @param {boolean} isTransparent - Whether this wall has transparency
  */
 function renderWallSlice(ctx, x, y, width, height, texture, color, textureX, brightness, isTransparent = false) {
+  // Very dark walls: just draw solid black (prevents texture bleeding through overlay)
+  if (brightness < 0.03) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x, y, width + 0.5, height);
+    return;
+  }
+
   // Handle solid color walls
   if (!texture || !texture.complete) {
     if (color) {
@@ -135,14 +143,14 @@ function renderWallSlice(ctx, x, y, width, height, texture, color, textureX, bri
     }
     return;
   }
-  
+
   const texWidth = texture.width;
   const texHeight = texture.height;
-  
+
   // Calculate source X position on texture (1 pixel wide slice)
   // Use bitwise OR for fast floor
   const srcX = ((textureX * texWidth) | 0) % texWidth;
-  
+
   // Draw the texture slice (add 0.5 to prevent gaps between slices)
   ctx.drawImage(
     texture,
@@ -151,7 +159,7 @@ function renderWallSlice(ctx, x, y, width, height, texture, color, textureX, bri
     x, y,              // Destination position
     width + 0.5, height // Destination dimensions
   );
-  
+
   // Apply darkness overlay only if needed
   if (brightness < 0.99) {
     ctx.fillStyle = `rgba(0,0,0,${1 - brightness})`;
@@ -280,6 +288,9 @@ let _playerY = 0;
 let _playerAngle = 0;
 let _playerFov = 0; // Set by setFloorCastingParams each frame
 
+// Lighting state
+let _lightingEnabled = false;
+
 /**
  * Sets parameters needed for floor casting
  * Call this before render3D each frame
@@ -296,6 +307,7 @@ function setFloorCastingParams(params) {
   _playerAngle = params.playerAngle * (Math.PI / 180); // Convert to radians
   _playerFov = params.fov * (Math.PI / 180);
   _floorCastEnabled = params.enabled ?? true;
+  _lightingEnabled = params.lightingEnabled ?? false;
 }
 
 /**
@@ -320,10 +332,36 @@ function render3D(scene, eyeHeight = 0, pitch = 0) {
   updateCanvasCache(main_canvas.width, main_canvas.height, sceneLength);
   
   // First pass: Calculate all brightness values and initialize z-buffer
-  for (let i = 0; i < sceneLength; i++) {
-    const dist = scene[i].distance;
-    brightnessCache[i] = calculateBrightness(dist);
-    zBuffer[i] = dist; // Store distance for occlusion testing
+  // When lighting is enabled, sample per-wall-segment (not per-column) to avoid
+  // banding from per-column brightness noise on the same wall face.
+  // Consecutive rays hitting the same boundary share one brightness value.
+  {
+    let lastBoundary = null;
+    let lastLitValue = 0;
+    const WALL_LIGHT_RESAMPLE = 6; // resample every N columns even on same wall
+
+    for (let i = 0; i < sceneLength; i++) {
+      const item = scene[i];
+      const dist = item.distance;
+      zBuffer[i] = dist;
+
+      if (_lightingEnabled && dist !== Infinity) {
+        const boundary = item.boundary;
+        const boundaryChanged = boundary !== lastBoundary;
+
+        if (boundaryChanged || (i % WALL_LIGHT_RESAMPLE === 0)) {
+          const litBrightness = lightingSystem.calculateBrightnessOnly(item.hitX, item.hitY);
+          const distFog = dist < 50 ? 1 : Math.min(1, 200 / dist);
+          lastLitValue = litBrightness * distFog;
+          lastBoundary = boundary;
+        }
+
+        brightnessCache[i] = lastLitValue;
+      } else {
+        brightnessCache[i] = calculateBrightness(dist);
+        lastBoundary = null;
+      }
+    }
   }
   
   // Calculate pitch offset (Y-shearing): shifts the horizon line
@@ -354,31 +392,23 @@ function render3D(scene, eyeHeight = 0, pitch = 0) {
     // Skip rays that hit nothing
     if (distance === Infinity) continue;
     
-    // LOD optimization: skip brightness smoothing for distant walls
+    // Get brightness (smoothed per-wall-segment in first pass when lighting enabled,
+    // or apply neighbor smoothing for non-lit maps)
     let averageBrightness;
-    if (distance > LOD_DISTANCE_THRESHOLD) {
-      // Far walls: use raw brightness (faster)
+    if (_lightingEnabled || distance > LOD_DISTANCE_THRESHOLD) {
       averageBrightness = brightnessCache[i];
     } else {
-      // Near walls: calculate smoothed brightness using neighboring rays
+      // Near walls without lighting: smoothed brightness using neighboring rays
       let brightnessSum = brightnessCache[i];
       let count = 1;
-      
-      // Unrolled loop for common case (smoothingRadius = 3)
-      const left3 = i - 3;
-      const left2 = i - 2;
-      const left1 = i - 1;
-      const right1 = i + 1;
-      const right2 = i + 2;
-      const right3 = i + 3;
-      
+      const left3 = i - 3, left2 = i - 2, left1 = i - 1;
+      const right1 = i + 1, right2 = i + 2, right3 = i + 3;
       if (left1 >= 0) { brightnessSum += brightnessCache[left1]; count++; }
       if (left2 >= 0) { brightnessSum += brightnessCache[left2]; count++; }
       if (left3 >= 0) { brightnessSum += brightnessCache[left3]; count++; }
       if (right1 < sceneLength) { brightnessSum += brightnessCache[right1]; count++; }
       if (right2 < sceneLength) { brightnessSum += brightnessCache[right2]; count++; }
       if (right3 < sceneLength) { brightnessSum += brightnessCache[right3]; count++; }
-      
       averageBrightness = brightnessSum / count;
     }
     
@@ -435,7 +465,9 @@ function render3D(scene, eyeHeight = 0, pitch = 0) {
             color: hit.color,
             boundary: hit.boundary,
             spriteTexture: hit.spriteTexture || null,
-            mirrored: hit.mirrored || false
+            mirrored: hit.mirrored || false,
+            hitX: hit.point ? hit.point.x : 0,
+            hitY: hit.point ? hit.point.y : 0
           });
         }
       }
@@ -466,11 +498,18 @@ function render3D(scene, eyeHeight = 0, pitch = 0) {
     const y = horizonY - wallHeight * 0.5 + verticalOffset;
     const x = rayIndex * sliceWidth;
     
-    // Calculate brightness for this distance
-    const brightness = calculateBrightness(distance);
-    
+    // Calculate brightness — use lighting if enabled
+    let brightness;
+    if (_lightingEnabled && slice.hitX !== undefined) {
+      const litBrightness = lightingSystem.calculateBrightnessOnly(slice.hitX, slice.hitY);
+      const distFog = distance < 50 ? 1 : Math.min(1, 200 / distance);
+      brightness = litBrightness * distFog;
+    } else {
+      brightness = calculateBrightness(distance);
+    }
+
     renderTranslucentSlice(main_ctx, x, y, sliceWidth, wallHeight, texture, color, textureX, brightness, boundary, spriteTexture, mirrored);
   }
 }
 
-export { render3D, setFloorCastingParams, floorCaster };
+export { render3D, setFloorCastingParams, floorCaster, lightingSystem };

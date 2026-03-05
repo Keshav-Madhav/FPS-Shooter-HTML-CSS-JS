@@ -112,7 +112,9 @@ class CameraClass {
         color: null,
         boundary: null,
         transparentHits: [],
-        heightMultiplier: 0 // Store precomputed multiplier for renderer
+        heightMultiplier: 0, // Store precomputed multiplier for renderer
+        hitX: 0, // World X of wall hit point (for lighting)
+        hitY: 0  // World Y of wall hit point (for lighting)
       };
     }
     
@@ -439,6 +441,8 @@ class CameraClass {
       sceneItem.boundary = hitBoundary;
       sceneItem.transparentHits = transparentHits;
       sceneItem.heightMultiplier = heightMult; // Pass to renderer
+      sceneItem.hitX = closestHit ? closestHit.x : 0;
+      sceneItem.hitY = closestHit ? closestHit.y : 0;
     }
   }
 

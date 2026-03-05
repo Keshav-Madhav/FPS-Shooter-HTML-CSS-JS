@@ -1131,9 +1131,61 @@ function createMazeMap(textures, name, options = {}) {
     }
   ];
   
-  console.log(`Maze generated: ${cols}x${rows} grid, ${boundaries.length} walls, ${enemies.length} enemies, ${rooms.length} rooms`);
+  // Place light sources in the maze
+  // 1. Start zone light (bright cyan)
+  mazeMap.addLight({ x: startX, y: startY, radius: 200, intensity: 1.0, color: { r: 0.4, g: 0.9, b: 1.0 }, flicker: false });
+  // 2. Goal zone light (bright green)
+  mazeMap.addLight({ x: goalX, y: goalY, radius: 200, intensity: 1.0, color: { r: 0.3, g: 1.0, b: 0.5 }, flicker: false });
+
+  // 3. Junction lights — place torches at corridor intersections (3+ open walls)
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const cell = grid[cy][cx];
+      const openWalls = (!cell.walls.north ? 1 : 0) + (!cell.walls.south ? 1 : 0)
+                      + (!cell.walls.east ? 1 : 0) + (!cell.walls.west ? 1 : 0);
+      // Junctions (3+ openings) get a torch
+      if (openWalls >= 3) {
+        const lx = cx * cellSize + cellSize * 0.5;
+        const ly = cy * cellSize + cellSize * 0.5;
+        // Skip if too close to start or goal
+        const dxS = lx - startX, dyS = ly - startY;
+        const dxG = lx - goalX, dyG = ly - goalY;
+        if (dxS * dxS + dyS * dyS > cellSize * cellSize && dxG * dxG + dyG * dyG > cellSize * cellSize) {
+          mazeMap.addLight({ x: lx, y: ly, radius: 130, intensity: 0.7, flicker: true });
+        }
+      }
+    }
+  }
+
+  // 4. Scatter a few extra torches in dead-ends (1 opening) for atmosphere
+  const deadEnds = [];
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const cell = grid[cy][cx];
+      const openWalls = (!cell.walls.north ? 1 : 0) + (!cell.walls.south ? 1 : 0)
+                      + (!cell.walls.east ? 1 : 0) + (!cell.walls.west ? 1 : 0);
+      if (openWalls === 1) {
+        deadEnds.push({ x: cx * cellSize + cellSize * 0.5, y: cy * cellSize + cellSize * 0.5 });
+      }
+    }
+  }
+  // Light about 40% of dead-ends
+  for (let i = 0; i < deadEnds.length; i++) {
+    if (Math.random() < 0.4) {
+      mazeMap.addLight({ x: deadEnds[i].x, y: deadEnds[i].y, radius: 100, intensity: 0.5, color: { r: 1.0, g: 0.6, b: 0.3 }, flicker: true });
+    }
+  }
+
+  // 5. Lights in rooms
+  for (const room of rooms) {
+    const roomCenterX = (room.x + room.width / 2) * cellSize + cellSize * 0.5;
+    const roomCenterY = (room.y + room.height / 2) * cellSize + cellSize * 0.5;
+    mazeMap.addLight({ x: roomCenterX, y: roomCenterY, radius: 180, intensity: 0.85, color: { r: 1.0, g: 0.9, b: 0.7 }, flicker: true });
+  }
+
+  console.log(`Maze generated: ${cols}x${rows} grid, ${boundaries.length} walls, ${enemies.length} enemies, ${rooms.length} rooms, ${mazeMap.lights.length} lights`);
   console.log(`Start zone: (${spawnLocation.x}, ${spawnLocation.y}), Goal zone: (${goalX}, ${goalY})`);
-  
+
   return mazeMap;
 }
 

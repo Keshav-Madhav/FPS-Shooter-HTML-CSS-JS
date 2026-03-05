@@ -81,7 +81,20 @@ export const PlayerConfig = {
 
   // Vertical look (pitch)
   verticalSensitivity: 0.005,
-  maxPitch: 0.75
+  maxPitch: 0.75,
+
+  // Flashlight
+  flashlightConeAngle: 25,   // half-cone in degrees
+  flashlightRange: 300,
+  flashlightIntensity: 0.9,
+  flashlightDrainRate: 0.02,  // per second when on
+  flashlightRechargeRate: 0.01, // per second when off
+
+  // Crouch visibility modifiers
+  crouchFlashlightRangeMultiplier: 0.5,
+  crouchFlashlightConeMultiplier: 0.6,
+  crouchDarkeningMultiplier: 0.6,  // ambient/light brightness multiplier when crouching
+  crouchVignetteStrength: 0.7      // vignette darkness at edges (0-1)
 };
 
 // ===========================================
@@ -138,6 +151,7 @@ export const InputConfig = {
     reset: ['r', 'R'],
     noclip: ['n', 'N'],
     pathReveal: ['p', 'P'],
+    flashlight: ['f', 'F'],
     mapSelector: ['m', 'M', 'Tab']
   }
 };

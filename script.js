@@ -9,7 +9,7 @@
 import { GameLoop, GameStateManager, InputHandler, RaycastManager } from './core/index.js';
 
 // Configuration
-import { MinimapConfig, DetectionConfig, ControlsConfig, FogOfWarConfig } from './config/index.js';
+import { MinimapConfig, DetectionConfig, ControlsConfig, FogOfWarConfig, PlayerConfig } from './config/index.js';
 
 // UI Components
 import { 
@@ -38,7 +38,7 @@ import { createEnemyTestMap } from './maps/enemyTestMap.js';
 // Utilities
 import { getDeltaTime } from './utils/deltaTime.js';
 import { drawFPS } from './utils/fpsDisplay.js';
-import { render3D, setFloorCastingParams, floorCaster } from './utils/render3DFunction.js';
+import { render3D, setFloorCastingParams, floorCaster, lightingSystem } from './utils/render3DFunction.js';
 import { drawBackground, drawMinimap, resizeCanvas } from './utils/utils.js';
 import FogOfWar from './utils/FogOfWar.js';
 
@@ -267,6 +267,10 @@ const inputHandler = new InputHandler(main_canvas, {
     resetGame();
   },
 
+  onFlashlightToggle: () => {
+    player.toggleFlashlight();
+  },
+
   onNoclipToggle: () => {
     noclipEnabled = player.toggleCollision();
     console.log(`Noclip mode: ${noclipEnabled ? 'ON' : 'OFF'}`);
@@ -358,7 +362,7 @@ window.addEventListener('resize', () => {
 // ===========================================
 
 let showOptimizationStats = false; // Toggle with 'O' key
-let floorCastingEnabled = true; // Toggle with 'F' key
+let floorCastingEnabled = true; // Toggle with 'G' key
 
 // Performance tracking - lightweight
 let lastStatsTime = performance.now();
@@ -591,7 +595,7 @@ function drawOptimizationStats(ctx, width, height) {
   
   // Controls hint
   ctx.fillStyle = 'rgba(120, 120, 120, 0.9)';
-  ctx.fillText('[O] Hide Stats  [F] Toggle Floor  [M] Map Select', x, y);
+  ctx.fillText('[O] Hide Stats  [G] Toggle Floor  [M] Map Select', x, y);
   
   ctx.restore();
 }
@@ -603,7 +607,7 @@ document.addEventListener('keydown', (e) => {
       showOptimizationStats = !showOptimizationStats;
       console.log(`Optimization stats: ${showOptimizationStats ? 'ON' : 'OFF'}`);
     }
-    if (e.key === 'f' || e.key === 'F') {
+    if (e.key === 'g' || e.key === 'G') {
       floorCastingEnabled = !floorCastingEnabled;
       floorCaster.enabled = floorCastingEnabled;
       console.log(`Floor casting: ${floorCastingEnabled ? 'ON' : 'OFF'}`);
@@ -675,6 +679,17 @@ function setActiveMap(maps, mapName) {
   floorCaster.clearZones();
   if (ActiveMap.floorZones) {
     floorCaster.setZones(ActiveMap.floorZones);
+  }
+
+  // Configure lighting system
+  lightingSystem.clear();
+  if (ActiveMap.lights && ActiveMap.lights.length > 0) {
+    for (const light of ActiveMap.lights) {
+      lightingSystem.addLight(light.x, light.y, light.radius, light.intensity, light.color, light.flicker);
+    }
+    floorCaster.lightingEnabled = true;
+  } else {
+    floorCaster.lightingEnabled = false;
   }
   
   // Update map selector
@@ -763,7 +778,7 @@ function setUpGame() {
   setActiveMap(gameMaps, 'Maze Map');
   
   console.log('Optimizations enabled: Spatial Grid, SIMD-like batching, Precomputed Height Multipliers, Floor Casting');
-  console.log('Press O to toggle optimization stats overlay, F to toggle floor casting');
+  console.log('Press O to toggle optimization stats overlay, G to toggle floor casting, F to toggle flashlight');
 }
 
 // ===========================================
@@ -830,6 +845,91 @@ function drawPathExpiryTimer() {
 }
 
 // ===========================================
+// BATTERY UI
+// ===========================================
+
+/**
+ * Draws the flashlight battery indicator
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} width - Canvas width
+ * @param {number} height - Canvas height
+ */
+function drawBatteryUI(ctx, width, height) {
+  if (!player) return;
+
+  const barWidth = 120;
+  const barHeight = 10;
+  const x = width - barWidth - 20;
+  const y = height - 40;
+  const level = player.batteryLevel;
+
+  ctx.save();
+
+  // Background
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(x - 2, y - 2, barWidth + 4, barHeight + 4);
+
+  // Border
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 2, y - 2, barWidth + 4, barHeight + 4);
+
+  // Fill color based on level
+  let fillColor;
+  if (level > 0.5) {
+    fillColor = `rgba(100, 200, 255, 0.8)`;
+  } else if (level > 0.2) {
+    fillColor = `rgba(255, 200, 50, 0.8)`;
+  } else {
+    const pulse = 0.6 + 0.4 * Math.sin(performance.now() * 0.01);
+    fillColor = `rgba(255, 50, 50, ${0.8 * pulse})`;
+  }
+
+  ctx.fillStyle = fillColor;
+  ctx.fillRect(x, y, barWidth * level, barHeight);
+
+  // Label
+  ctx.font = '10px monospace';
+  ctx.fillStyle = player.flashlightOn ? 'rgba(255, 255, 200, 0.9)' : 'rgba(150, 150, 150, 0.7)';
+  ctx.textAlign = 'right';
+  ctx.fillText(player.flashlightOn ? 'FLASHLIGHT [F]' : 'OFF [F]', x + barWidth, y - 5);
+
+  ctx.restore();
+}
+
+// ===========================================
+// CROUCH VIGNETTE
+// ===========================================
+
+// Smoothly interpolated vignette strength
+let currentVignetteStrength = 0;
+
+/**
+ * Draws a vignette overlay when crouching (limited visibility effect)
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} width - Canvas width
+ * @param {number} height - Canvas height
+ */
+function drawCrouchVignette(ctx, width, height) {
+  const targetStrength = player.isCrouching ? PlayerConfig.crouchVignetteStrength : 0;
+  currentVignetteStrength += (targetStrength - currentVignetteStrength) * 0.08;
+
+  if (currentVignetteStrength < 0.01) return;
+
+  const cx = width / 2;
+  const cy = height / 2;
+  const maxRadius = Math.sqrt(cx * cx + cy * cy);
+  const innerRadius = maxRadius * (1 - currentVignetteStrength * 0.6);
+
+  const gradient = ctx.createRadialGradient(cx, cy, innerRadius, cx, cy, maxRadius);
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(1, `rgba(0, 0, 0, ${currentVignetteStrength})`);
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+}
+
+// ===========================================
 // MAIN DRAW LOOP
 // ===========================================
 
@@ -848,7 +948,14 @@ function draw() {
   updatePerformanceTracking();
 
   // Redraw background with parallax and pitch
-  drawBackground(background_ctx, background_canvas.height, background_canvas.width, player.eyeHeight, player.pitch);
+  // When lighting is active, the background is very dark (the void beyond walls)
+  const hasLighting = ActiveMap.lights && ActiveMap.lights.length > 0;
+  if (hasLighting) {
+    background_ctx.fillStyle = '#050508';
+    background_ctx.fillRect(0, 0, background_canvas.width, background_canvas.height);
+  } else {
+    drawBackground(background_ctx, background_canvas.height, background_canvas.width, player.eyeHeight, player.pitch);
+  }
 
   // Update input state to player
   const moveState = inputHandler.getMoveState();
@@ -867,7 +974,8 @@ function draw() {
       playerY: player.pos.y,
       playerAngle: player.viewDirection,
       fov: player.camera.fov,
-      enabled: floorCastingEnabled
+      enabled: floorCastingEnabled,
+      lightingEnabled: ActiveMap.lights && ActiveMap.lights.length > 0
     });
     // Render scene but don't update
     const scene = player.getScene(boundaries);
@@ -887,7 +995,8 @@ function draw() {
       playerY: player.pos.y,
       playerAngle: player.viewDirection,
       fov: player.camera.fov,
-      enabled: floorCastingEnabled
+      enabled: floorCastingEnabled,
+      lightingEnabled: ActiveMap.lights && ActiveMap.lights.length > 0
     });
     // Render scene but don't update
     const scene = player.getScene(boundaries);
@@ -907,7 +1016,8 @@ function draw() {
       playerY: player.pos.y,
       playerAngle: player.viewDirection,
       fov: player.camera.fov,
-      enabled: floorCastingEnabled
+      enabled: floorCastingEnabled,
+      lightingEnabled: ActiveMap.lights && ActiveMap.lights.length > 0
     });
     // Render scene but don't update
     const scene = player.getScene(boundaries);
@@ -926,18 +1036,52 @@ function draw() {
     }
   }
 
+  // Update lighting system (flicker animation)
+  lightingSystem.update(deltaTime);
+
+  // Update flashlight
+  player.updateFlashlight(deltaTime);
+  if (hasLighting) {
+    if (player.flashlightOn && player.batteryLevel > 0) {
+      const angleRad = player.viewDirection * Math.PI / 180;
+      const isCrouching = player.isCrouching;
+      const rangeMult = isCrouching ? PlayerConfig.crouchFlashlightRangeMultiplier : 1;
+      const coneMult = isCrouching ? PlayerConfig.crouchFlashlightConeMultiplier : 1;
+      lightingSystem.setFlashlight({
+        x: player.pos.x,
+        y: player.pos.y,
+        angle: angleRad,
+        coneAngle: PlayerConfig.flashlightConeAngle * Math.PI / 180 * coneMult,
+        range: PlayerConfig.flashlightRange * rangeMult,
+        intensity: PlayerConfig.flashlightIntensity
+      });
+    } else {
+      lightingSystem.setFlashlight(null);
+    }
+
+    // Set crouch darkening on lighting system
+    lightingSystem.crouchMultiplier = player.isCrouching ? PlayerConfig.crouchDarkeningMultiplier : 1.0;
+  }
+
   // Set floor casting parameters
   setFloorCastingParams({
     playerX: player.pos.x,
     playerY: player.pos.y,
     playerAngle: player.viewDirection,
     fov: player.camera.fov,
-    enabled: floorCastingEnabled
+    enabled: floorCastingEnabled,
+    lightingEnabled: hasLighting
   });
 
   // Render scene
   const scene = player.getScene(boundaries);
   render3D(scene, player.eyeHeight, player.pitch);
+
+  // Crouch vignette (drawn over 3D scene, before UI)
+  if (hasLighting) {
+    drawCrouchVignette(main_ctx, main_canvas.width, main_canvas.height);
+  }
+
   player.update(deltaTime, boundaries);
 
   // Check if player reached goal zone
@@ -1020,9 +1164,14 @@ function draw() {
     detectionTimer.draw(main_ctx, main_canvas.width, main_canvas.height);
   }
 
+  // Battery UI (only when lighting is active)
+  if (hasLighting) {
+    drawBatteryUI(main_ctx, main_canvas.width, main_canvas.height);
+  }
+
   // Map selector (drawn last to be on top)
   mapSelector.draw(main_ctx, main_canvas.width, main_canvas.height);
-  
+
   // Optimization stats (debug overlay)
   drawOptimizationStats(main_ctx, main_canvas.width, main_canvas.height);
 }
