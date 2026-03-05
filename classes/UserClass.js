@@ -91,7 +91,7 @@ class Player {
     this.pitch = 0; // -1 to 1 range (0 = level, positive = looking up, negative = looking down)
 
     // Flashlight state
-    this.flashlightOn = true; // starts on
+    this.flashlightOn = false; // starts off
     this.batteryLevel = 1.0; // 0-1
 
     // FOV state

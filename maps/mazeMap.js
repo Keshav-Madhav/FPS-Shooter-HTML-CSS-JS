@@ -1137,13 +1137,29 @@ function createMazeMap(textures, name, options = {}) {
   // 2. Goal zone light (bright green)
   mazeMap.addLight({ x: goalX, y: goalY, radius: 200, intensity: 1.0, color: { r: 0.3, g: 1.0, b: 0.5 }, flicker: false });
 
-  // 3. Junction lights — place torches at corridor intersections (3+ open walls)
+  // Helper: check if a cell is inside any room (rooms have open interiors)
+  function isInRoom(cx, cy) {
+    for (const room of rooms) {
+      if (cx >= room.x && cx < room.x + room.width && cy >= room.y && cy < room.y + room.height) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 3. Junction lights — place torches at some corridor intersections (3+ open walls)
+  const junctionLights = [];
   for (let cy = 0; cy < rows; cy++) {
     for (let cx = 0; cx < cols; cx++) {
+      // Skip edge cells (lights would be behind outer boundary walls)
+      if (cx === 0 || cy === 0 || cx === cols - 1 || cy === rows - 1) continue;
+      // Skip cells inside rooms (rooms get their own dedicated lights)
+      if (isInRoom(cx, cy)) continue;
+
       const cell = grid[cy][cx];
       const openWalls = (!cell.walls.north ? 1 : 0) + (!cell.walls.south ? 1 : 0)
                       + (!cell.walls.east ? 1 : 0) + (!cell.walls.west ? 1 : 0);
-      // Junctions (3+ openings) get a torch
+      // Junctions (3+ openings) are candidates
       if (openWalls >= 3) {
         const lx = cx * cellSize + cellSize * 0.5;
         const ly = cy * cellSize + cellSize * 0.5;
@@ -1151,9 +1167,15 @@ function createMazeMap(textures, name, options = {}) {
         const dxS = lx - startX, dyS = ly - startY;
         const dxG = lx - goalX, dyG = ly - goalY;
         if (dxS * dxS + dyS * dyS > cellSize * cellSize && dxG * dxG + dyG * dyG > cellSize * cellSize) {
-          mazeMap.addLight({ x: lx, y: ly, radius: 130, intensity: 0.7, flicker: true });
+          junctionLights.push({ x: lx, y: ly });
         }
       }
+    }
+  }
+  // Only light ~30% of junctions (spread out the darkness)
+  for (let i = 0; i < junctionLights.length; i++) {
+    if (Math.random() < 0.3) {
+      mazeMap.addLight({ x: junctionLights[i].x, y: junctionLights[i].y, radius: 130, intensity: 0.7, flicker: true });
     }
   }
 
@@ -1161,6 +1183,10 @@ function createMazeMap(textures, name, options = {}) {
   const deadEnds = [];
   for (let cy = 0; cy < rows; cy++) {
     for (let cx = 0; cx < cols; cx++) {
+      // Skip edge cells and room cells
+      if (cx === 0 || cy === 0 || cx === cols - 1 || cy === rows - 1) continue;
+      if (isInRoom(cx, cy)) continue;
+
       const cell = grid[cy][cx];
       const openWalls = (!cell.walls.north ? 1 : 0) + (!cell.walls.south ? 1 : 0)
                       + (!cell.walls.east ? 1 : 0) + (!cell.walls.west ? 1 : 0);
@@ -1169,18 +1195,23 @@ function createMazeMap(textures, name, options = {}) {
       }
     }
   }
-  // Light about 40% of dead-ends
+  // Light about 15% of dead-ends
   for (let i = 0; i < deadEnds.length; i++) {
-    if (Math.random() < 0.4) {
+    if (Math.random() < 0.15) {
       mazeMap.addLight({ x: deadEnds[i].x, y: deadEnds[i].y, radius: 100, intensity: 0.5, color: { r: 1.0, g: 0.6, b: 0.3 }, flicker: true });
     }
   }
 
-  // 5. Lights in rooms
+  // 5. Lights in rooms — always at least one per room
   for (const room of rooms) {
     const roomCenterX = (room.x + room.width / 2) * cellSize + cellSize * 0.5;
     const roomCenterY = (room.y + room.height / 2) * cellSize + cellSize * 0.5;
-    mazeMap.addLight({ x: roomCenterX, y: roomCenterY, radius: 180, intensity: 0.85, color: { r: 1.0, g: 0.9, b: 0.7 }, flicker: true });
+    mazeMap.addLight({ x: roomCenterX, y: roomCenterY, radius: 200, intensity: 0.9, color: { r: 1.0, g: 0.9, b: 0.7 }, flicker: true });
+    // Larger rooms get an extra light offset from center
+    if (room.width >= 3 && room.height >= 3) {
+      const offsetX = cellSize * 0.8;
+      mazeMap.addLight({ x: roomCenterX - offsetX, y: roomCenterY, radius: 140, intensity: 0.6, color: { r: 1.0, g: 0.85, b: 0.6 }, flicker: true });
+    }
   }
 
   console.log(`Maze generated: ${cols}x${rows} grid, ${boundaries.length} walls, ${enemies.length} enemies, ${rooms.length} rooms, ${mazeMap.lights.length} lights`);

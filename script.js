@@ -1044,23 +1044,21 @@ function draw() {
   if (hasLighting) {
     if (player.flashlightOn && player.batteryLevel > 0) {
       const angleRad = player.viewDirection * Math.PI / 180;
-      const isCrouching = player.isCrouching;
-      const rangeMult = isCrouching ? PlayerConfig.crouchFlashlightRangeMultiplier : 1;
-      const coneMult = isCrouching ? PlayerConfig.crouchFlashlightConeMultiplier : 1;
       lightingSystem.setFlashlight({
         x: player.pos.x,
         y: player.pos.y,
         angle: angleRad,
-        coneAngle: PlayerConfig.flashlightConeAngle * Math.PI / 180 * coneMult,
-        range: PlayerConfig.flashlightRange * rangeMult,
+        coneAngle: PlayerConfig.flashlightConeAngle * Math.PI / 180,
+        range: PlayerConfig.flashlightRange,
         intensity: PlayerConfig.flashlightIntensity
       });
+      // No crouch darkening when flashlight is active
+      lightingSystem.crouchMultiplier = 1.0;
     } else {
       lightingSystem.setFlashlight(null);
+      // Only apply crouch darkening when flashlight is off
+      lightingSystem.crouchMultiplier = player.isCrouching ? PlayerConfig.crouchDarkeningMultiplier : 1.0;
     }
-
-    // Set crouch darkening on lighting system
-    lightingSystem.crouchMultiplier = player.isCrouching ? PlayerConfig.crouchDarkeningMultiplier : 1.0;
   }
 
   // Set floor casting parameters

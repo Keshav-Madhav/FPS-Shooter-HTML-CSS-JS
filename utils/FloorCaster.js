@@ -14,6 +14,12 @@ const FLOOR_RENDER_STEP = 1; // Render every Nth row (1 = full, 2 = half) - use 
 const MAX_FLOOR_DISTANCE = RenderConfig.maxRenderDistance; // Max distance for floor calculations
 const FLOOR_TILE_SIZE = 64; // Size of floor tiles in world units
 
+// Ceiling light fixture appearance
+const FIXTURE_RADIUS = 18;           // World-unit radius of the bright fixture spot
+const FIXTURE_RADIUS_SQ = FIXTURE_RADIUS * FIXTURE_RADIUS;
+const FIXTURE_GLOW_RADIUS = 40;      // Slightly larger warm glow around fixture
+const FIXTURE_GLOW_RADIUS_SQ = FIXTURE_GLOW_RADIUS * FIXTURE_GLOW_RADIUS;
+
 // Rendering constants (from config - must match wall rendering)
 const HEIGHT_SCALE_FACTOR = RenderConfig.heightScaleFactor;
 const PARALLAX_STRENGTH = RenderConfig.parallaxStrength;
@@ -51,7 +57,13 @@ class FloorCaster {
     this._height = 0;
     this._halfHeight = 0;
     this._rowDistances = null; // Pre-calculated distance per row
-    
+
+    // Cached arrays (reused across frames to avoid GC pressure)
+    this._rayDirs = null;
+    this._rayDirsCount = 0;
+    this._wallBottoms = null;
+    this._wallTops = null;
+
     // Animation time for effects
     this._animTime = 0;
 
@@ -217,17 +229,23 @@ class FloorCaster {
     // Base height multiplier (same as wall rendering)
     const baseHeightMultiplier = height * HEIGHT_SCALE_FACTOR;
     
-    // Pre-calculate ray directions for each column (matching camera exactly)
+    // Pre-calculate ray directions (reuse array across frames to avoid GC)
+    if (!this._rayDirs || this._rayDirsCount !== sceneLength) {
+      this._rayDirs = new Array(sceneLength);
+      for (let i = 0; i < sceneLength; i++) {
+        this._rayDirs[i] = { x: 0, y: 0, cos: 0 };
+      }
+      this._rayDirsCount = sceneLength;
+    }
+    const rayDirs = this._rayDirs;
     const halfFov = fov * 0.5;
-    const rayDirs = new Array(sceneLength);
+    const fovStep = fov / sceneLength;
     for (let i = 0; i < sceneLength; i++) {
-      const angleOffset = -halfFov + i * (fov / sceneLength);
+      const angleOffset = -halfFov + i * fovStep;
       const rayAngle = playerAngle + angleOffset;
-      rayDirs[i] = {
-        x: Math.cos(rayAngle),
-        y: Math.sin(rayAngle),
-        cos: Math.cos(angleOffset) // For fisheye correction
-      };
+      rayDirs[i].x = Math.cos(rayAngle);
+      rayDirs[i].y = Math.sin(rayAngle);
+      rayDirs[i].cos = Math.cos(angleOffset);
     }
     
     // Shifted horizon from pitch
@@ -241,6 +259,10 @@ class FloorCaster {
     // Render ceiling (above horizon)
     if (this.ceilingEnabled) {
       this._renderCeiling(ctx, scene, playerX, playerY, rayDirs, horizonY, width, height, baseHeightMultiplier, eyeHeight);
+      // Draw ceiling light fixtures on top of ceiling
+      if (this.lightingEnabled) {
+        this._renderCeilingFixtures(ctx, scene, playerX, playerY, playerAngle, fov, horizonY, width, height, baseHeightMultiplier, eyeHeight);
+      }
     }
   }
   
@@ -252,9 +274,18 @@ class FloorCaster {
   _renderFloor(ctx, scene, playerX, playerY, rayDirs, horizonY, width, height, baseHeightMultiplier, eyeHeight) {
     const sceneLength = scene.length;
     const colWidth = width / sceneLength;
+    const floorH = this.floorColor.h;
+    const floorS = this.floorColor.s;
+    const floorL = this.floorColor.l;
+    const useChecker = this.useCheckerboard;
+    const checkerDark = this.checkerboardDarkness;
+    const litMode = this.lightingEnabled;
 
-    // Pre-calculate wall bottom positions for each column
-    const wallBottoms = new Float32Array(sceneLength);
+    // Reuse wall position arrays
+    if (!this._wallBottoms || this._wallBottoms.length !== sceneLength) {
+      this._wallBottoms = new Float32Array(sceneLength);
+    }
+    const wallBottoms = this._wallBottoms;
     for (let col = 0; col < sceneLength; col++) {
       const wallDist = scene[col].distance;
       if (wallDist === Infinity || wallDist <= 0) {
@@ -262,111 +293,154 @@ class FloorCaster {
       } else {
         const wallHeight = baseHeightMultiplier / wallDist;
         const wallParallaxOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
-        const wallY = horizonY - wallHeight * 0.5 + wallParallaxOffset;
-        wallBottoms[col] = wallY + wallHeight;
+        wallBottoms[col] = horizonY - wallHeight * 0.5 + wallParallaxOffset + wallHeight;
       }
     }
 
-    // When lighting is enabled, use larger steps for performance
-    const rowStep = this.lightingEnabled ? 3 : 2;
-    // Sample lighting every Nth column (reuse for adjacent columns)
-    const lightSampleStep = this.lightingEnabled ? 4 : 1;
+    // Lighting mode: larger steps, sample every Nth column, skip far rows
+    const rowStep = litMode ? 3 : 2;
+    const lightSampleStep = litMode ? 8 : 1;
+
+    // Pre-compute fog color once (same for all fog pixels)
+    const fogLightness = litMode ? (floorL * 0.02) | 0 : null;
+    const fogColor = litMode ? `hsl(${floorH},${(floorS * 0.3) | 0}%,${fogLightness}%)` : null;
 
     for (let screenY = Math.floor(horizonY) + 1; screenY < height; screenY += rowStep) {
       const rowFromCenter = screenY - horizonY;
       if (rowFromCenter <= 0) continue;
 
-      // Calculate floor distance and brightness for this row
       const parallaxFactor = 0.5 + eyeHeight * PARALLAX_STRENGTH;
       const perpDist = (baseHeightMultiplier * parallaxFactor) / rowFromCenter;
+
+      const isFog = perpDist > MAX_FLOOR_DISTANCE;
+
+      // Very distant lit rows: single dark fog span (beyond any light range)
+      if (litMode && isFog) {
+        let first = -1, last = -1;
+        for (let col = 0; col < sceneLength; col++) {
+          if (screenY >= wallBottoms[col]) {
+            if (first < 0) first = col;
+            last = col;
+          }
+        }
+        if (first >= 0) {
+          ctx.fillStyle = fogColor;
+          ctx.fillRect(first * colWidth, screenY, (last - first + 1) * colWidth + 1, rowStep);
+        }
+        continue;
+      }
 
       const distRatio = Math.min(perpDist / MAX_FLOOR_DISTANCE, 2.0);
       const brightness = Math.max(0.08, 1 - distRatio * 0.45);
 
-      const isFog = perpDist > MAX_FLOOR_DISTANCE;
+      if (isFog) {
+        // Non-lit fog: single span
+        const fogB = brightness * 0.5;
+        const fogL2 = (floorL * fogB) | 0;
+        const color = `hsl(${floorH},${(floorS * 0.5) | 0}%,${fogL2}%)`;
+        let first = -1, last = -1;
+        for (let col = 0; col < sceneLength; col++) {
+          if (screenY >= wallBottoms[col]) {
+            if (first < 0) first = col;
+            last = col;
+          }
+        }
+        if (first >= 0) {
+          ctx.fillStyle = color;
+          ctx.fillRect(first * colWidth, screenY, (last - first + 1) * colWidth + 1, rowStep);
+        }
+        continue;
+      }
 
-      // For distant rows with lighting, skip per-pixel calculation (too far to see detail)
-      const skipLightCalc = this.lightingEnabled && perpDist > 500;
-
-      // Draw spans across this row
+      // Normal row: per-column with span batching
+      // Quantize lightness to integers so spans merge (key optimization)
       let spanStart = -1;
-      let spanColor = null;
+      let spanLightness = -1;
+      let spanIsZone = false;
+      let spanZoneColor = null;
       let cachedLitBrightness = 0;
 
       for (let col = 0; col < sceneLength; col++) {
-        // Check if wall occludes this pixel
         if (screenY < wallBottoms[col]) {
-          // Wall covers this pixel - end any current span
           if (spanStart >= 0) {
-            ctx.fillStyle = spanColor;
+            if (spanIsZone) {
+              ctx.fillStyle = spanZoneColor;
+            } else {
+              ctx.fillStyle = `hsl(${floorH},${floorS}%,${spanLightness}%)`;
+            }
             ctx.fillRect(spanStart * colWidth, screenY, (col - spanStart) * colWidth + 1, rowStep);
             spanStart = -1;
           }
           continue;
         }
 
-        // Calculate color for this pixel
-        let color;
+        const rayDir = rayDirs[col];
+        const rayDist = perpDist / rayDir.cos;
+        const worldX = playerX + rayDir.x * rayDist;
+        const worldY = playerY + rayDir.y * rayDist;
 
-        if (isFog) {
-          const { h, s, l } = this.floorColor;
-          const fogBright = this.lightingEnabled ? 0.02 : brightness * 0.5;
-          color = `hsl(${h}, ${s * 0.3}%, ${l * fogBright}%)`;
-        } else {
-          // Calculate world position
-          const rayDir = rayDirs[col];
-          const rayDist = perpDist / rayDir.cos;
-          const worldX = playerX + rayDir.x * rayDist;
-          const worldY = playerY + rayDir.y * rayDist;
-
-          // Use dynamic lighting if enabled
-          let pixelBrightness = brightness;
-          if (this.lightingEnabled) {
-            if (skipLightCalc) {
-              pixelBrightness = 0.02;
-            } else if (col % lightSampleStep === 0) {
-              const litBrightness = lightingSystem.calculateBrightnessOnly(worldX, worldY);
-              const distFog = perpDist < 50 ? 1 : Math.min(1, 200 / perpDist);
-              cachedLitBrightness = litBrightness * distFog;
-              pixelBrightness = cachedLitBrightness;
-            } else {
-              pixelBrightness = cachedLitBrightness;
-            }
+        let pixelBrightness = brightness;
+        if (litMode) {
+          // Sample lighting less frequently for distant rows
+          const sampleStep = perpDist > 500 ? 16 : lightSampleStep;
+          if (col % sampleStep === 0) {
+            const litBrightness = lightingSystem.calculateBrightnessOnly(worldX, worldY);
+            const distFog = perpDist < 50 ? 1 : Math.min(1, 200 / perpDist);
+            cachedLitBrightness = litBrightness * distFog;
           }
-
-          // Check for zone
-          const zone = this.getZoneAt(worldX, worldY);
-
-          if (zone) {
-            color = this._getZoneColor(zone, pixelBrightness);
-          } else {
-            // Checkerboard
-            const tileX = Math.floor(worldX / FLOOR_TILE_SIZE);
-            const tileY = Math.floor(worldY / FLOOR_TILE_SIZE);
-            const isChecker = (tileX + tileY) % 2 === 0;
-
-            const { h, s, l } = this.floorColor;
-            const checkerMod = this.useCheckerboard && isChecker ? this.checkerboardDarkness : 1;
-            color = `hsl(${h}, ${s}%, ${l * pixelBrightness * checkerMod}%)`;
-          }
+          pixelBrightness = cachedLitBrightness;
         }
 
-        // Start new span or continue if same color
-        if (spanStart < 0) {
-          spanStart = col;
-          spanColor = color;
-        } else if (color !== spanColor) {
-          // Color changed - draw current span and start new
-          ctx.fillStyle = spanColor;
-          ctx.fillRect(spanStart * colWidth, screenY, (col - spanStart) * colWidth + 1, rowStep);
-          spanStart = col;
-          spanColor = color;
+        // Check for zone (only if we have zones)
+        let zone = null;
+        if (this.zones.length > 0) {
+          zone = this.getZoneAt(worldX, worldY);
+        }
+
+        if (zone) {
+          const zoneColor = this._getZoneColor(zone, pixelBrightness);
+          if (spanStart >= 0 && (!spanIsZone || spanZoneColor !== zoneColor)) {
+            if (spanIsZone) {
+              ctx.fillStyle = spanZoneColor;
+            } else {
+              ctx.fillStyle = `hsl(${floorH},${floorS}%,${spanLightness}%)`;
+            }
+            ctx.fillRect(spanStart * colWidth, screenY, (col - spanStart) * colWidth + 1, rowStep);
+            spanStart = col;
+          } else if (spanStart < 0) {
+            spanStart = col;
+          }
+          spanIsZone = true;
+          spanZoneColor = zoneColor;
+        } else {
+          // Checkerboard + quantize lightness to integer
+          const tileX = (worldX / FLOOR_TILE_SIZE) | 0;
+          const tileY = (worldY / FLOOR_TILE_SIZE) | 0;
+          const checkerMod = useChecker && ((tileX + tileY) & 1) === 0 ? checkerDark : 1;
+          const lightness = (floorL * pixelBrightness * checkerMod) | 0; // Integer quantize
+
+          if (spanStart >= 0 && (spanIsZone || lightness !== spanLightness)) {
+            if (spanIsZone) {
+              ctx.fillStyle = spanZoneColor;
+            } else {
+              ctx.fillStyle = `hsl(${floorH},${floorS}%,${spanLightness}%)`;
+            }
+            ctx.fillRect(spanStart * colWidth, screenY, (col - spanStart) * colWidth + 1, rowStep);
+            spanStart = col;
+          } else if (spanStart < 0) {
+            spanStart = col;
+          }
+          spanIsZone = false;
+          spanLightness = lightness;
         }
       }
 
-      // Draw final span
       if (spanStart >= 0) {
-        ctx.fillStyle = spanColor;
+        if (spanIsZone) {
+          ctx.fillStyle = spanZoneColor;
+        } else {
+          ctx.fillStyle = `hsl(${floorH},${floorS}%,${spanLightness}%)`;
+        }
         ctx.fillRect(spanStart * colWidth, screenY, (sceneLength - spanStart) * colWidth + 1, rowStep);
       }
     }
@@ -407,9 +481,17 @@ class FloorCaster {
   _renderCeiling(ctx, scene, playerX, playerY, rayDirs, horizonY, width, height, baseHeightMultiplier, eyeHeight) {
     const sceneLength = scene.length;
     const colWidth = width / sceneLength;
+    const ceilH = this.ceilingColor.h;
+    const ceilS = this.ceilingColor.s;
+    const ceilL = this.ceilingColor.l;
+    const useChecker = this.useCheckerboard;
+    const checkerDark = this.checkerboardDarkness;
+    const litMode = this.lightingEnabled;
 
-    // Pre-calculate wall top positions for each column
-    const wallTops = new Float32Array(sceneLength);
+    if (!this._wallTops || this._wallTops.length !== sceneLength) {
+      this._wallTops = new Float32Array(sceneLength);
+    }
+    const wallTops = this._wallTops;
     for (let col = 0; col < sceneLength; col++) {
       const wallDist = scene[col].distance;
       if (wallDist === Infinity || wallDist <= 0) {
@@ -421,101 +503,196 @@ class FloorCaster {
       }
     }
 
-    // When lighting is enabled, use larger steps for performance
-    const rowStep = this.lightingEnabled ? 3 : 2;
-    const lightSampleStep = this.lightingEnabled ? 4 : 1;
+    const rowStep = litMode ? 3 : 2;
+    const lightSampleStep = litMode ? 8 : 1;
+
+    const fogLightness = litMode ? (ceilL * 0.02) | 0 : null;
+    const fogColor = litMode ? `hsl(${ceilH},${(ceilS * 0.3) | 0}%,${fogLightness}%)` : null;
 
     for (let screenY = Math.floor(horizonY) - 1; screenY >= 0; screenY -= rowStep) {
       const rowFromCenter = horizonY - screenY;
       if (rowFromCenter <= 0) continue;
 
-      // Calculate ceiling distance and brightness for this row
       const parallaxFactor = 0.5 - eyeHeight * PARALLAX_STRENGTH;
       const perpDist = (baseHeightMultiplier * Math.abs(parallaxFactor)) / rowFromCenter;
+
+      const isFog = perpDist > MAX_FLOOR_DISTANCE;
+
+      // Very distant lit rows: single dark fog span (beyond any light range)
+      if (litMode && isFog) {
+        let first = -1, last = -1;
+        for (let col = 0; col < sceneLength; col++) {
+          if (screenY <= wallTops[col]) {
+            if (first < 0) first = col;
+            last = col;
+          }
+        }
+        if (first >= 0) {
+          ctx.fillStyle = fogColor;
+          ctx.fillRect(first * colWidth, screenY, (last - first + 1) * colWidth + 1, rowStep);
+        }
+        continue;
+      }
 
       const distRatio = Math.min(perpDist / MAX_FLOOR_DISTANCE, 2.0);
       const brightness = Math.max(0.12, 1 - distRatio * 0.35);
 
-      const isFog = perpDist > MAX_FLOOR_DISTANCE;
-      const skipLightCalc = this.lightingEnabled && perpDist > 500;
+      if (isFog) {
+        const fogB = brightness * 0.6;
+        const fogL2 = (ceilL * fogB) | 0;
+        const color = `hsl(${ceilH},${(ceilS * 0.3) | 0}%,${fogL2}%)`;
+        let first = -1, last = -1;
+        for (let col = 0; col < sceneLength; col++) {
+          if (screenY <= wallTops[col]) {
+            if (first < 0) first = col;
+            last = col;
+          }
+        }
+        if (first >= 0) {
+          ctx.fillStyle = color;
+          ctx.fillRect(first * colWidth, screenY, (last - first + 1) * colWidth + 1, rowStep);
+        }
+        continue;
+      }
 
-      // Draw spans across this row
       let spanStart = -1;
-      let spanColor = null;
+      let spanLightness = -1;
       let cachedLitBrightness = 0;
 
       for (let col = 0; col < sceneLength; col++) {
-        // Check if wall occludes this pixel
         if (screenY > wallTops[col]) {
-          // Wall covers this pixel - end any current span
           if (spanStart >= 0) {
-            ctx.fillStyle = spanColor;
+            ctx.fillStyle = `hsl(${ceilH},${ceilS}%,${spanLightness}%)`;
             ctx.fillRect(spanStart * colWidth, screenY, (col - spanStart) * colWidth + 1, rowStep);
             spanStart = -1;
           }
           continue;
         }
 
-        // Calculate color for this pixel
-        let color;
+        const rayDir = rayDirs[col];
+        const rayDist = perpDist / rayDir.cos;
+        const worldX = playerX + rayDir.x * rayDist;
+        const worldY = playerY + rayDir.y * rayDist;
 
-        if (isFog) {
-          const { h, s, l } = this.ceilingColor;
-          const fogBright = this.lightingEnabled ? 0.02 : brightness * 0.6;
-          color = `hsl(${h}, ${s * 0.3}%, ${l * fogBright}%)`;
-        } else {
-          // Calculate world position for checkerboard
-          const rayDir = rayDirs[col];
-          const rayDist = perpDist / rayDir.cos;
-          const worldX = playerX + rayDir.x * rayDist;
-          const worldY = playerY + rayDir.y * rayDist;
-
-          // Use dynamic lighting if enabled
-          let pixelBrightness = brightness;
-          if (this.lightingEnabled) {
-            if (skipLightCalc) {
-              pixelBrightness = 0.02;
-            } else if (col % lightSampleStep === 0) {
-              const litBrightness = lightingSystem.calculateBrightnessOnly(worldX, worldY);
-              const distFog = perpDist < 50 ? 1 : Math.min(1, 200 / perpDist);
-              cachedLitBrightness = litBrightness * distFog;
-              pixelBrightness = cachedLitBrightness;
-            } else {
-              pixelBrightness = cachedLitBrightness;
-            }
+        let pixelBrightness = brightness;
+        if (litMode) {
+          const sampleStep = perpDist > 500 ? 16 : lightSampleStep;
+          if (col % sampleStep === 0) {
+            const litBrightness = lightingSystem.calculateBrightnessOnly(worldX, worldY);
+            const distFog = perpDist < 50 ? 1 : Math.min(1, 200 / perpDist);
+            cachedLitBrightness = litBrightness * distFog;
           }
-
-          // Checkerboard pattern (same tile size as floor)
-          const tileX = Math.floor(worldX / FLOOR_TILE_SIZE);
-          const tileY = Math.floor(worldY / FLOOR_TILE_SIZE);
-          const isChecker = (tileX + tileY) % 2 === 0;
-
-          const { h, s, l } = this.ceilingColor;
-          const checkerMod = this.useCheckerboard && isChecker ? this.checkerboardDarkness : 1;
-          color = `hsl(${h}, ${s}%, ${l * pixelBrightness * checkerMod}%)`;
+          pixelBrightness = cachedLitBrightness;
         }
 
-        // Start new span or continue if same color
-        if (spanStart < 0) {
-          spanStart = col;
-          spanColor = color;
-        } else if (color !== spanColor) {
-          // Color changed - draw current span and start new
-          ctx.fillStyle = spanColor;
+        const tileX = (worldX / FLOOR_TILE_SIZE) | 0;
+        const tileY = (worldY / FLOOR_TILE_SIZE) | 0;
+        const checkerMod = useChecker && ((tileX + tileY) & 1) === 0 ? checkerDark : 1;
+        const lightness = (ceilL * pixelBrightness * checkerMod) | 0;
+
+        if (spanStart >= 0 && lightness !== spanLightness) {
+          ctx.fillStyle = `hsl(${ceilH},${ceilS}%,${spanLightness}%)`;
           ctx.fillRect(spanStart * colWidth, screenY, (col - spanStart) * colWidth + 1, rowStep);
           spanStart = col;
-          spanColor = color;
+        } else if (spanStart < 0) {
+          spanStart = col;
         }
+        spanLightness = lightness;
       }
 
-      // Draw final span
       if (spanStart >= 0) {
-        ctx.fillStyle = spanColor;
+        ctx.fillStyle = `hsl(${ceilH},${ceilS}%,${spanLightness}%)`;
         ctx.fillRect(spanStart * colWidth, screenY, (sceneLength - spanStart) * colWidth + 1, rowStep);
       }
     }
   }
   
+  /**
+   * Renders glowing light fixtures on the ceiling at each light source position.
+   * Projects world-space light positions to screen-space and draws radial glows.
+   * @private
+   */
+  _renderCeilingFixtures(ctx, scene, playerX, playerY, playerAngle, fov, horizonY, width, height, baseHeightMultiplier, eyeHeight) {
+    const lights = lightingSystem.lights;
+    if (!lights.length) return;
+
+    const halfFov = fov * 0.5;
+    const cosAngle = Math.cos(playerAngle);
+    const sinAngle = Math.sin(playerAngle);
+
+    for (let i = 0; i < lights.length; i++) {
+      const light = lights[i];
+
+      // Vector from player to light
+      const dx = light.x - playerX;
+      const dy = light.y - playerY;
+
+      // Distance to light
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1 || dist > 600) continue; // too close or too far
+
+      // Angle from player's forward direction to the light
+      const angleToLight = Math.atan2(dy, dx);
+      let relAngle = angleToLight - playerAngle;
+      // Normalize to [-PI, PI]
+      while (relAngle > Math.PI) relAngle -= Math.PI * 2;
+      while (relAngle < -Math.PI) relAngle += Math.PI * 2;
+
+      // Skip if outside FOV (with some margin for the fixture size)
+      if (Math.abs(relAngle) > halfFov + 0.1) continue;
+
+      // Project to screen X: map relAngle from [-halfFov, halfFov] to [0, width]
+      const screenX = ((relAngle + halfFov) / fov) * width;
+
+      // Perpendicular distance (for correct projection height)
+      const perpDist = dx * cosAngle + dy * sinAngle;
+      if (perpDist < 1) continue; // behind player
+
+      // Project to screen Y: ceiling fixture is at the ceiling plane
+      // Use the same projection as ceiling rendering
+      const parallaxFactor = 0.5 - eyeHeight * PARALLAX_STRENGTH;
+      const screenYFromHorizon = (baseHeightMultiplier * Math.abs(parallaxFactor)) / perpDist;
+      const screenY = horizonY - screenYFromHorizon;
+
+      // Skip if off-screen
+      if (screenY < -20 || screenY > horizonY || screenX < -30 || screenX > width + 30) continue;
+
+      // Check if a wall is closer (fixture is occluded)
+      const colIndex = ((screenX / width) * scene.length) | 0;
+      if (colIndex >= 0 && colIndex < scene.length) {
+        if (scene[colIndex].distance < perpDist) continue; // wall is in front
+      }
+
+      // Projected fixture radius on screen
+      const projectedSize = (FIXTURE_GLOW_RADIUS / perpDist) * baseHeightMultiplier * 0.008;
+      if (projectedSize < 1) continue; // too small to see
+
+      // Determine fixture color from light color
+      const lr = light.color ? light.color.r : 1;
+      const lg = light.color ? light.color.g : 0.85;
+      const lb = light.color ? light.color.b : 0.6;
+      const cr = (lr * 255) | 0;
+      const cg = (lg * 255) | 0;
+      const cb = (lb * 255) | 0;
+
+      // Draw radial gradient glow
+      const grad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, projectedSize);
+      grad.addColorStop(0, `rgba(${Math.min(255, cr + 80)},${Math.min(255, cg + 60)},${Math.min(255, cb + 40)},0.95)`);
+      grad.addColorStop(0.3, `rgba(${cr},${cg},${cb},0.6)`);
+      grad.addColorStop(0.7, `rgba(${cr},${cg},${cb},0.15)`);
+      grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(screenX - projectedSize, screenY - projectedSize, projectedSize * 2, projectedSize * 2);
+
+      // Small bright core (the actual "bulb/fixture")
+      const coreSize = projectedSize * 0.3;
+      ctx.fillStyle = `rgba(${Math.min(255, cr + 120)},${Math.min(255, cg + 100)},${Math.min(255, cb + 80)},0.9)`;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, Math.max(1, coreSize), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   /**
    * Draws a horizontal ceiling span
    * @private

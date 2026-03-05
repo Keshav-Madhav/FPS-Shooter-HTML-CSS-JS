@@ -25,33 +25,25 @@ import { RenderConfig } from "../config/GameConfig.js";
 // Rendering constants (from config)
 const HEIGHT_SCALE_FACTOR = RenderConfig.heightScaleFactor;
 const BRIGHTNESS_SCALE_FACTOR = RenderConfig.brightnessScaleFactor;
-const DARKNESS_EXPONENT = RenderConfig.darknessExponent;
-const SMOOTHING_RADIUS = RenderConfig.smoothingRadius;
 const PARALLAX_STRENGTH = RenderConfig.parallaxStrength;
 const PITCH_STRENGTH = RenderConfig.pitchStrength;
 
 // Distance threshold for LOD (Level of Detail) optimization
-const LOD_DISTANCE_THRESHOLD = 500; // Beyond this, use simplified rendering
+const LOD_DISTANCE_THRESHOLD = 500;
 
 // Canvas dimensions cache
 let cachedWidth = 0;
 let cachedHeight = 0;
 let cachedHalfHeight = 0;
 let sliceWidth = 0;
-let cachedBaseHeightMultiplier = 0; // For fallback when heightMultiplier not provided
+let cachedBaseHeightMultiplier = 0;
 
 // Pre-allocated typed arrays for performance
 let brightnessCache = null;
-let zBuffer = null; // 1D Z-buffer for occlusion
-
-// Flag to track if we're using precomputed multipliers
-let usePrecomputedMultipliers = false;
+let zBuffer = null;
 
 /**
  * Updates cached canvas dimensions and reallocates buffers if needed
- * @param {number} width - Canvas width
- * @param {number} height - Canvas height
- * @param {number} rayCount - Number of rays in the scene
  */
 function updateCanvasCache(width, height, rayCount) {
   if (width !== cachedWidth || height !== cachedHeight) {
@@ -61,8 +53,7 @@ function updateCanvasCache(width, height, rayCount) {
     sliceWidth = width / rayCount;
     cachedBaseHeightMultiplier = height * HEIGHT_SCALE_FACTOR;
   }
-  
-  // Reallocate buffers if ray count changed
+
   if (!brightnessCache || brightnessCache.length !== rayCount) {
     brightnessCache = new Float32Array(rayCount);
     zBuffer = new Float32Array(rayCount);
@@ -70,126 +61,86 @@ function updateCanvasCache(width, height, rayCount) {
 }
 
 /**
- * Calculates brightness with exponential falloff
- * Optimized with early exit for infinity
- * @param {number} distance - Distance to the wall
- * @returns {number} Brightness value 0-1
+ * Calculates brightness with exponential falloff (non-lighting mode)
  */
 function calculateBrightness(distance) {
   if (distance === Infinity || distance <= 0) return 0;
   const normalized = BRIGHTNESS_SCALE_FACTOR / distance;
-  // Fast path for close walls
   if (normalized >= 1) return 1;
-  // Use multiplication instead of Math.pow for exponent 2
   return normalized * normalized;
 }
 
-/**
- * Renders a single wall slice with texture or solid color
- * Optimized to minimize state changes
- * @param {CanvasRenderingContext2D} ctx - Canvas context
- * @param {number} x - X position on screen
- * @param {number} y - Y position on screen
- * @param {number} width - Slice width
- * @param {number} height - Wall height
- * @param {HTMLImageElement|null} texture - Texture image (or null for solid color)
- * @param {string|null} color - Solid color (used when texture is null)
- * @param {number} textureX - Texture X coordinate (0-1)
- * @param {number} brightness - Brightness value (0-1)
- * @param {boolean} isTransparent - Whether this wall has transparency
- */
-function renderWallSlice(ctx, x, y, width, height, texture, color, textureX, brightness, isTransparent = false) {
-  // Very dark walls: just draw solid black (prevents texture bleeding through overlay)
-  if (brightness < 0.03) {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(x, y, width + 0.5, height);
-    return;
-  }
+// =============================================
+// WALL RENDERING - LIGHTING MODE
+// Black base + globalAlpha texture draw. No overlay pass (avoids sub-pixel banding).
+// globalAlpha is batched per wall segment by the render loop.
+// =============================================
 
-  // Handle solid color walls
+/**
+ * Renders a wall slice when lighting is active.
+ * Black base prevents floor/ceiling bleed-through. globalAlpha controls brightness.
+ * Single compositing step — no overlay = no banding.
+ */
+function renderWallSliceLit(ctx, x, y, w, h, texture, color, textureX) {
+  if (texture && texture.complete) {
+    const srcX = ((textureX * texture.width) | 0) % texture.width;
+    ctx.drawImage(texture, srcX, 0, 1, texture.height, x, y, w, h);
+  } else if (color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+  } else {
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(x, y, w, h);
+  }
+}
+
+// =============================================
+// WALL RENDERING - STANDARD MODE (no lighting)
+// Original overlay approach, works fine with distance-based brightness.
+// =============================================
+
+/**
+ * Renders a wall slice in standard (non-lighting) mode.
+ */
+function renderWallSliceStandard(ctx, x, y, w, h, texture, color, textureX, brightness, isTransparent) {
   if (!texture || !texture.complete) {
     if (color) {
-      // Check if color has alpha (rgba format)
-      if (color.startsWith('rgba') || color.startsWith('hsla')) {
-        ctx.fillStyle = color;
-        ctx.fillRect(x, y, width + 0.5, height);
-        // Apply brightness to transparent colors
-        if (brightness < 0.99 && !isTransparent) {
-          ctx.fillStyle = `rgba(0,0,0,${(1 - brightness) * 0.7})`;
-          ctx.fillRect(x, y, width + 0.5, height);
-        }
-      } else if (color.startsWith('hsl(')) {
-        // HSL color - apply brightness by modifying lightness
-        ctx.fillStyle = color;
-        ctx.fillRect(x, y, width + 0.5, height);
-        if (brightness < 0.99) {
-          ctx.fillStyle = `rgba(0,0,0,${1 - brightness})`;
-          ctx.fillRect(x, y, width + 0.5, height);
-        }
-      } else {
-        // Solid color - apply brightness
-        ctx.fillStyle = color;
-        ctx.fillRect(x, y, width + 0.5, height);
-        if (brightness < 0.99) {
-          ctx.fillStyle = `rgba(0,0,0,${1 - brightness})`;
-          ctx.fillRect(x, y, width + 0.5, height);
-        }
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, w, h);
+      if (brightness < 0.99 && !isTransparent) {
+        const overlayAlpha = color.startsWith('rgba') || color.startsWith('hsla')
+          ? (1 - brightness) * 0.7
+          : 1 - brightness;
+        ctx.fillStyle = `rgba(0,0,0,${overlayAlpha})`;
+        ctx.fillRect(x, y, w, h);
       }
     } else {
-      // Fallback gray color
       const gray = (128 * brightness) | 0;
       ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
-      ctx.fillRect(x, y, width + 0.5, height);
+      ctx.fillRect(x, y, w, h);
     }
     return;
   }
 
-  const texWidth = texture.width;
-  const texHeight = texture.height;
+  const srcX = ((textureX * texture.width) | 0) % texture.width;
+  ctx.drawImage(texture, srcX, 0, 1, texture.height, x, y, w, h);
 
-  // Calculate source X position on texture (1 pixel wide slice)
-  // Use bitwise OR for fast floor
-  const srcX = ((textureX * texWidth) | 0) % texWidth;
-
-  // Draw the texture slice (add 0.5 to prevent gaps between slices)
-  ctx.drawImage(
-    texture,
-    srcX, 0,           // Source position
-    1, texHeight,      // Source dimensions (1 pixel column)
-    x, y,              // Destination position
-    width + 0.5, height // Destination dimensions
-  );
-
-  // Apply darkness overlay only if needed
   if (brightness < 0.99) {
     ctx.fillStyle = `rgba(0,0,0,${1 - brightness})`;
-    ctx.fillRect(x, y, width + 0.5, height);
+    ctx.fillRect(x, y, w, h);
   }
 }
 
-/**
- * Renders a transparent/translucent slice (sprites or colored walls)
- * Supports 8-directional sprites with individual images or sprite sheet
- * @param {CanvasRenderingContext2D} ctx - Canvas context
- * @param {number} x - X position on screen
- * @param {number} y - Y position on screen
- * @param {number} width - Slice width
- * @param {number} height - Wall height
- * @param {HTMLImageElement|null} texture - Texture image
- * @param {string|null} color - Solid color with alpha
- * @param {number|Object} textureX - Texture X coordinate (0-1) or object with directional info
- * @param {number} brightness - Brightness value (0-1)
- * @param {Object|null} boundary - The boundary object (for sprite info)
- * @param {HTMLImageElement|null} spriteTexture - Individual sprite texture (for directional sprites)
- * @param {boolean} mirrored - Whether to mirror the sprite horizontally
- */
+// =============================================
+// TRANSPARENT / SPRITE RENDERING
+// =============================================
+
 function renderTranslucentSlice(ctx, x, y, width, height, texture, color, textureX, brightness, boundary = null, spriteTexture = null, mirrored = false) {
   // Handle colored translucent walls
   if (!texture || !texture.complete) {
     if (color) {
       ctx.fillStyle = color;
       ctx.fillRect(x, y, width + 0.5, height);
-      // Apply subtle brightness for depth
       if (brightness < 0.95) {
         ctx.fillStyle = `rgba(0,0,0,${(1 - brightness) * 0.3})`;
         ctx.fillRect(x, y, width + 0.5, height);
@@ -197,265 +148,245 @@ function renderTranslucentSlice(ctx, x, y, width, height, texture, color, textur
     }
     return;
   }
-  
-  // Handle individual directional sprites (new system)
+
+  // Individual directional sprites
   if (spriteTexture && spriteTexture.complete) {
     const spriteWidth = spriteTexture.width;
     const spriteHeight = spriteTexture.height;
-    
-    // Scale factor to adjust sprite size (lower = smaller sprites)
-    // Adjust this value to change how tall sprites appear
     const SPRITE_SCALE = 0.5;
-    
-    // Calculate aspect ratio to maintain proportions
     const aspectRatio = spriteHeight / spriteWidth;
     const adjustedHeight = height * aspectRatio * SPRITE_SCALE;
-    
-    // Center the sprite vertically
     const adjustedY = y + (height - adjustedHeight) / 2;
-    
-    // Calculate source X position
-    // For mirrored sprites, we need to flip the textureX coordinate
+
     let srcX;
     if (mirrored) {
-      // Flip the texture coordinate for mirroring
       srcX = ((1 - textureX) * spriteWidth) | 0;
     } else {
       srcX = (textureX * spriteWidth) | 0;
     }
-    
-    // Clamp to valid range
     if (srcX < 0) srcX = 0;
     if (srcX >= spriteWidth) srcX = spriteWidth - 1;
-    
-    ctx.drawImage(
-      spriteTexture,
-      srcX, 0,
-      1, spriteHeight,
-      x, adjustedY,
-      width + 0.5, adjustedHeight
-    );
+
+    // In darkness, skip or dim sprites via globalAlpha (sprites are transparent PNGs,
+    // so globalAlpha is correct — they're meant to blend with the background)
+    if (_lightingEnabled) {
+      if (brightness < 0.02) return; // invisible in darkness
+      if (brightness < 0.99) ctx.globalAlpha = brightness;
+    }
+
+    ctx.drawImage(spriteTexture, srcX, 0, 1, spriteHeight, x, adjustedY, width + 0.5, adjustedHeight);
+
+    if (_lightingEnabled && brightness < 0.99) {
+      ctx.globalAlpha = 1;
+    }
     return;
   }
-  
-  // Handle textured sprites (legacy sprite sheet)
+
+  // Legacy sprite sheet
   const texWidth = texture.width;
   const texHeight = texture.height;
-  
-  // Check for 8-directional sprite sheet (legacy)
+
   if (boundary && boundary.spriteSheet) {
     const spriteColumns = boundary.spriteSheet.columns || 8;
     const spriteRows = boundary.spriteSheet.rows || 6;
-    
-    // Calculate exact pixel dimensions for each sprite cell
-    const spriteWidth = texWidth / spriteColumns;
     const spriteRowHeight = texHeight / spriteRows;
-    
-    // textureX is already calculated to be in the correct frame range (0-1 total texture)
-    // Convert to pixel position
+
     let srcX = ((textureX * texWidth) | 0);
-    
-    // Clamp to valid range
     if (srcX < 0) srcX = 0;
     if (srcX >= texWidth) srcX = texWidth - 1;
-    
-    // Only draw from the first row (directional sprites)
-    ctx.drawImage(
-      texture,
-      srcX, 0,                    // Source X, Y (first row)
-      1, spriteRowHeight,         // Source dimensions (1 pixel wide, first row height)
-      x, y,                       // Destination position
-      width + 0.5, height         // Destination dimensions
-    );
+
+    ctx.drawImage(texture, srcX, 0, 1, spriteRowHeight, x, y, width + 0.5, height);
   } else {
-    // Regular sprite - use full texture height
     const srcX = ((textureX * texWidth) | 0) % texWidth;
-    
-    ctx.drawImage(
-      texture,
-      srcX, 0,
-      1, texHeight,
-      x, y,
-      width + 0.5, height
-    );
+    ctx.drawImage(texture, srcX, 0, 1, texHeight, x, y, width + 0.5, height);
   }
 }
 
-// Floor casting state (set via setFloorCastingParams before render3D)
+// =============================================
+// FLOOR CASTING STATE
+// =============================================
+
 let _floorCastEnabled = true;
 let _playerX = 0;
 let _playerY = 0;
 let _playerAngle = 0;
-let _playerFov = 0; // Set by setFloorCastingParams each frame
-
-// Lighting state
+let _playerFov = 0;
 let _lightingEnabled = false;
 
-/**
- * Sets parameters needed for floor casting
- * Call this before render3D each frame
- * @param {Object} params - Floor casting parameters
- * @param {number} params.playerX - Player world X position
- * @param {number} params.playerY - Player world Y position
- * @param {number} params.playerAngle - Player view angle in degrees
- * @param {number} params.fov - Field of view in degrees
- * @param {boolean} [params.enabled=true] - Whether floor casting is enabled
- */
 function setFloorCastingParams(params) {
   _playerX = params.playerX;
   _playerY = params.playerY;
-  _playerAngle = params.playerAngle * (Math.PI / 180); // Convert to radians
+  _playerAngle = params.playerAngle * (Math.PI / 180);
   _playerFov = params.fov * (Math.PI / 180);
   _floorCastEnabled = params.enabled ?? true;
   _lightingEnabled = params.lightingEnabled ?? false;
 }
 
+// =============================================
+// MAIN RENDER FUNCTION
+// =============================================
+
 /**
- * Renders the 3D scene by drawing wall slices with textures and darkness.
- * Optimized with:
- * - 1D Z-buffer for occlusion culling
- * - Pre-calculated brightness with smoothing
- * - Typed arrays for better memory performance
- * - Reduced draw calls and state changes
- * - Vertical parallax support for jumping and crouching
- * - Floor and ceiling casting with perspective
- * 
- * @param {RayIntersection[]} scene - An array of intersection data for each ray.
- * @param {number} [eyeHeight=0] - Vertical camera position (-1 to 1, 0 = center)
- *                                  Positive = looking from above, negative = from below
- * @param {number} [pitch=0] - Vertical look angle (-1 to 1, positive = looking up)
+ * Renders the 3D scene.
+ *
+ * @param {RayIntersection[]} scene - Ray intersection data.
+ * @param {number} [eyeHeight=0] - Vertical camera position (-1 to 1)
+ * @param {number} [pitch=0] - Vertical look angle (-1 to 1)
  */
 function render3D(scene, eyeHeight = 0, pitch = 0) {
   const sceneLength = scene.length;
-  
-  // Update dimension cache and allocate buffers
   updateCanvasCache(main_canvas.width, main_canvas.height, sceneLength);
-  
-  // First pass: Calculate all brightness values and initialize z-buffer
-  // When lighting is enabled, sample per-wall-segment (not per-column) to avoid
-  // banding from per-column brightness noise on the same wall face.
-  // Consecutive rays hitting the same boundary share one brightness value.
-  {
+
+  // --- First pass: brightness + z-buffer ---
+  if (_lightingEnabled) {
+    // Lighting mode: sample per wall segment to avoid per-column noise.
+    // Consecutive rays on the same boundary share one brightness sample.
     let lastBoundary = null;
     let lastLitValue = 0;
-    const WALL_LIGHT_RESAMPLE = 6; // resample every N columns even on same wall
+    const RESAMPLE_INTERVAL = 6;
 
     for (let i = 0; i < sceneLength; i++) {
       const item = scene[i];
       const dist = item.distance;
       zBuffer[i] = dist;
 
-      if (_lightingEnabled && dist !== Infinity) {
-        const boundary = item.boundary;
-        const boundaryChanged = boundary !== lastBoundary;
-
-        if (boundaryChanged || (i % WALL_LIGHT_RESAMPLE === 0)) {
-          const litBrightness = lightingSystem.calculateBrightnessOnly(item.hitX, item.hitY);
-          const distFog = dist < 50 ? 1 : Math.min(1, 200 / dist);
-          lastLitValue = litBrightness * distFog;
-          lastBoundary = boundary;
-        }
-
-        brightnessCache[i] = lastLitValue;
-      } else {
-        brightnessCache[i] = calculateBrightness(dist);
+      if (dist === Infinity) {
+        brightnessCache[i] = 0;
         lastBoundary = null;
+        continue;
       }
+
+      const boundary = item.boundary;
+      if (boundary !== lastBoundary || (i % RESAMPLE_INTERVAL === 0)) {
+        const litBrightness = lightingSystem.calculateBrightnessOnly(item.hitX, item.hitY);
+        const distFog = dist < 50 ? 1 : Math.min(1, 200 / dist);
+        lastLitValue = litBrightness * distFog;
+        lastBoundary = boundary;
+      }
+
+      brightnessCache[i] = lastLitValue;
+    }
+  } else {
+    // Standard mode: distance-based brightness with neighbor smoothing
+    for (let i = 0; i < sceneLength; i++) {
+      const dist = scene[i].distance;
+      brightnessCache[i] = calculateBrightness(dist);
+      zBuffer[i] = dist;
     }
   }
-  
-  // Calculate pitch offset (Y-shearing): shifts the horizon line
+
+  // --- Pitch offset (Y-shearing) ---
   const pitchOffset = pitch * cachedHeight * PITCH_STRENGTH;
   const horizonY = cachedHalfHeight + pitchOffset;
 
-  // Floor and ceiling pass: Render before walls so walls draw on top
+  // --- Floor and ceiling pass ---
   if (_floorCastEnabled && floorCaster.enabled) {
     floorCaster.updateDimensions(cachedWidth, cachedHeight);
     floorCaster.render(
-      main_ctx,
-      scene,
-      _playerX,
-      _playerY,
-      _playerAngle,
-      _playerFov,
-      eyeHeight,
-      pitchOffset
+      main_ctx, scene,
+      _playerX, _playerY, _playerAngle, _playerFov,
+      eyeHeight, pitchOffset
     );
   }
-  
-  // Second pass: Render opaque walls
-  // Process in order (no sorting needed for opaque walls)
-  // Uses precomputed height multipliers when available for faster wall height calculation
-  for (let i = 0; i < sceneLength; i++) {
-    const { distance, textureX, texture, color, boundary, heightMultiplier } = scene[i];
-    
-    // Skip rays that hit nothing
-    if (distance === Infinity) continue;
-    
-    // Get brightness (smoothed per-wall-segment in first pass when lighting enabled,
-    // or apply neighbor smoothing for non-lit maps)
-    let averageBrightness;
-    if (_lightingEnabled || distance > LOD_DISTANCE_THRESHOLD) {
-      averageBrightness = brightnessCache[i];
-    } else {
-      // Near walls without lighting: smoothed brightness using neighboring rays
-      let brightnessSum = brightnessCache[i];
-      let count = 1;
-      const left3 = i - 3, left2 = i - 2, left1 = i - 1;
-      const right1 = i + 1, right2 = i + 2, right3 = i + 3;
-      if (left1 >= 0) { brightnessSum += brightnessCache[left1]; count++; }
-      if (left2 >= 0) { brightnessSum += brightnessCache[left2]; count++; }
-      if (left3 >= 0) { brightnessSum += brightnessCache[left3]; count++; }
-      if (right1 < sceneLength) { brightnessSum += brightnessCache[right1]; count++; }
-      if (right2 < sceneLength) { brightnessSum += brightnessCache[right2]; count++; }
-      if (right3 < sceneLength) { brightnessSum += brightnessCache[right3]; count++; }
-      averageBrightness = brightnessSum / count;
-    }
-    
-    // Calculate wall height using precomputed multiplier if available
-    // With precomputed: wallHeight = heightMultiplier / distance (single divide)
-    // Without precomputed: wallHeight = (height * SCALE) / distance (multiply + divide)
-    let wallHeight;
-    if (heightMultiplier && heightMultiplier > 0) {
-      // Use precomputed multiplier (includes fisheye correction)
-      wallHeight = heightMultiplier / distance;
-    } else {
-      // Fallback to manual calculation
-      wallHeight = cachedBaseHeightMultiplier / distance;
-    }
-    
-    // Distance-based parallax: closer walls (larger wallHeight) move more
-    // Positive eyeHeight (jumping) = walls shift down, negative (crouching) = walls shift up
-    // The offset is proportional to wallHeight, so close walls move more than distant ones
-    const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
-    const y = horizonY - wallHeight * 0.5 + verticalOffset;
-    const x = i * sliceWidth;
 
-    const isTransparent = boundary && boundary.isTransparent;
-    
-    renderWallSlice(
-      main_ctx,
-      x, y,
-      sliceWidth, wallHeight,
-      texture,
-      color,
-      textureX,
-      averageBrightness,
-      isTransparent
-    );
+  // --- Second pass: opaque walls ---
+  if (_lightingEnabled) {
+    // Lit mode: two-pass — black base then texture at globalAlpha=brightness.
+    // No overlay = no sub-pixel banding. globalAlpha = no bleed-through.
+    const ctx = main_ctx;
+
+    // Pass 1: black base fills (exact sliceWidth, no overlap)
+    ctx.fillStyle = '#000';
+    for (let i = 0; i < sceneLength; i++) {
+      const { distance, heightMultiplier } = scene[i];
+      if (distance === Infinity) continue;
+
+      const brightness = brightnessCache[i];
+      if (brightness < 0.005) continue;
+
+      let wallHeight;
+      if (heightMultiplier && heightMultiplier > 0) {
+        wallHeight = heightMultiplier / distance;
+      } else {
+        wallHeight = cachedBaseHeightMultiplier / distance;
+      }
+
+      const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
+      const y = horizonY - wallHeight * 0.5 + verticalOffset;
+      ctx.fillRect(i * sliceWidth, y, sliceWidth, wallHeight);
+    }
+
+    // Pass 2: textured walls at globalAlpha=brightness
+    let currentAlpha = -1;
+    for (let i = 0; i < sceneLength; i++) {
+      const { distance, textureX, texture, color, heightMultiplier } = scene[i];
+      if (distance === Infinity) continue;
+
+      const brightness = brightnessCache[i];
+      if (brightness < 0.005) continue;
+
+      let wallHeight;
+      if (heightMultiplier && heightMultiplier > 0) {
+        wallHeight = heightMultiplier / distance;
+      } else {
+        wallHeight = cachedBaseHeightMultiplier / distance;
+      }
+
+      const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
+      const x = i * sliceWidth;
+      const y = horizonY - wallHeight * 0.5 + verticalOffset;
+
+      if (brightness !== currentAlpha) {
+        ctx.globalAlpha = brightness;
+        currentAlpha = brightness;
+      }
+
+      renderWallSliceLit(ctx, x, y, sliceWidth + 0.5, wallHeight, texture, color, textureX);
+    }
+    ctx.globalAlpha = 1;
+  } else {
+    // Standard mode: distance-based brightness with neighbor smoothing
+    for (let i = 0; i < sceneLength; i++) {
+      const { distance, textureX, texture, color, boundary, heightMultiplier } = scene[i];
+      if (distance === Infinity) continue;
+
+      let brightness;
+      if (distance > LOD_DISTANCE_THRESHOLD) {
+        brightness = brightnessCache[i];
+      } else {
+        let sum = brightnessCache[i];
+        let count = 1;
+        for (let d = 1; d <= 3; d++) {
+          if (i - d >= 0) { sum += brightnessCache[i - d]; count++; }
+          if (i + d < sceneLength) { sum += brightnessCache[i + d]; count++; }
+        }
+        brightness = sum / count;
+      }
+
+      let wallHeight;
+      if (heightMultiplier && heightMultiplier > 0) {
+        wallHeight = heightMultiplier / distance;
+      } else {
+        wallHeight = cachedBaseHeightMultiplier / distance;
+      }
+
+      const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
+      const y = horizonY - wallHeight * 0.5 + verticalOffset;
+      const x = i * sliceWidth;
+      const isTransparent = boundary && boundary.isTransparent;
+
+      renderWallSliceStandard(main_ctx, x, y, sliceWidth + 0.5, wallHeight, texture, color, textureX, brightness, isTransparent);
+    }
   }
-  
-  // Third pass: Collect and render transparent/translucent walls
-  // Sort by distance (furthest first for correct alpha blending)
+
+  // --- Third pass: transparent / sprites ---
   const transparentSlices = [];
-  
+
   for (let i = 0; i < sceneLength; i++) {
     const { transparentHits } = scene[i];
-    
     if (transparentHits && transparentHits.length > 0) {
       for (let j = 0; j < transparentHits.length; j++) {
         const hit = transparentHits[j];
-        // Only add if in front of the z-buffer (already checked in camera, but double-check)
         if (hit.distance < zBuffer[i]) {
           transparentSlices.push({
             rayIndex: i,
@@ -473,18 +404,15 @@ function render3D(scene, eyeHeight = 0, pitch = 0) {
       }
     }
   }
-  
-  // Sort furthest first for correct alpha blending
+
   if (transparentSlices.length > 1) {
     transparentSlices.sort((a, b) => b.distance - a.distance);
   }
-  
-  // Render transparent/translucent slices
+
   for (let i = 0; i < transparentSlices.length; i++) {
     const slice = transparentSlices[i];
     const { rayIndex, distance, textureX, texture, color, boundary, spriteTexture, mirrored } = slice;
-    
-    // Use precomputed height multiplier from the corresponding ray if available
+
     const sceneItem = scene[rayIndex];
     let wallHeight;
     if (sceneItem && sceneItem.heightMultiplier && sceneItem.heightMultiplier > 0) {
@@ -492,15 +420,14 @@ function render3D(scene, eyeHeight = 0, pitch = 0) {
     } else {
       wallHeight = cachedBaseHeightMultiplier / distance;
     }
-    
-    // Distance-based parallax for transparent walls too
+
     const verticalOffset = eyeHeight * wallHeight * PARALLAX_STRENGTH;
     const y = horizonY - wallHeight * 0.5 + verticalOffset;
     const x = rayIndex * sliceWidth;
-    
-    // Calculate brightness — use lighting if enabled
+
+    // Brightness for transparent hit
     let brightness;
-    if (_lightingEnabled && slice.hitX !== undefined) {
+    if (_lightingEnabled) {
       const litBrightness = lightingSystem.calculateBrightnessOnly(slice.hitX, slice.hitY);
       const distFog = distance < 50 ? 1 : Math.min(1, 200 / distance);
       brightness = litBrightness * distFog;
