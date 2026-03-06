@@ -51,6 +51,8 @@ let boundaries = [];
 
 /** @type {EnemyClass[]} */
 let enemies = [];
+let enemyBoundaryMap = new Map();
+let fogBoundariesRef = null;
 
 /** @type {Player} */
 let player;
@@ -386,13 +388,14 @@ let cachedStats = {
 /**
  * Updates performance tracking (called every frame, lightweight)
  */
-function updatePerformanceTracking() {
+function updatePerformanceTracking(frameTime) {
+  if (!showOptimizationStats) return;
+
   const now = performance.now();
   statsFrameCount++;
   totalFrames++;
   
   // Track frame time for this frame
-  const frameTime = getDeltaTime(120) * (1000 / 120);
   cachedStats.frameTimeSum += frameTime;
   if (frameTime < cachedStats.frameTimeMin) cachedStats.frameTimeMin = frameTime;
   if (frameTime > cachedStats.frameTimeMax) cachedStats.frameTimeMax = frameTime;
@@ -605,6 +608,17 @@ document.addEventListener('keydown', (e) => {
   if (!settingsMenu.visible && !mapSelector.visible) {
     if (e.key === 'o' || e.key === 'O') {
       showOptimizationStats = !showOptimizationStats;
+      if (showOptimizationStats) {
+        const now = performance.now();
+        lastStatsTime = now;
+        statsFrameCount = 0;
+        totalFrames = 0;
+        sessionStartTime = now;
+        cachedStats.frameTimeSum = 0;
+        cachedStats.frameTimeMin = 999;
+        cachedStats.frameTimeMax = 0;
+        cachedStats.frameTimeSamples.length = 0;
+      }
       console.log(`Optimization stats: ${showOptimizationStats ? 'ON' : 'OFF'}`);
     }
     if (e.key === 'g' || e.key === 'G') {
@@ -630,6 +644,12 @@ function setActiveMap(maps, mapName) {
 
   enemies = ActiveMap.getEnemies();
   enemies.forEach(enemy => boundaries.push(enemy.skin));
+  enemyBoundaryMap = new Map();
+  for (const boundary of boundaries) {
+    if (boundary.uniqueID !== undefined && boundary.uniqueID !== null) {
+      enemyBoundaryMap.set(boundary.uniqueID, boundary);
+    }
+  }
 
   player.pos = { x: ActiveMap.userSpawnLocation.x, y: ActiveMap.userSpawnLocation.y };
   player.updateViewDirection(ActiveMap.userViewDirection);
@@ -674,6 +694,8 @@ function setActiveMap(maps, mapName) {
     fogOfWar.configure(mazeWidth, mazeHeight);
   }
   fogOfWar.reset();
+  fogBoundariesRef = null;
+  syncFogBoundaries();
   
   // Configure floor zones
   floorCaster.clearZones();
@@ -707,6 +729,17 @@ function switchToMap(index) {
 }
 
 /**
+ * Keeps fog-of-war boundaries synced with current boundary array.
+ * Uses a reference check to avoid unnecessary re-assignments.
+ */
+function syncFogBoundaries() {
+  if (fogBoundariesRef !== boundaries) {
+    fogOfWar.setBoundaries(boundaries);
+    fogBoundariesRef = boundaries;
+  }
+}
+
+/**
  * Resets the current game
  */
 function resetGame() {
@@ -727,6 +760,8 @@ function resetGame() {
   // Reset fog of war for maze maps
   if (isMazeMap) {
     fogOfWar.reset();
+    fogBoundariesRef = null;
+    syncFogBoundaries();
     mazeInstructions.show();
   }
 }
@@ -945,7 +980,7 @@ function draw() {
   const deltaTime = getDeltaTime(120);
   
   // Update performance tracking (lightweight, runs every frame)
-  updatePerformanceTracking();
+  updatePerformanceTracking(realDeltaSeconds * 1000);
 
   // Redraw background with parallax and pitch
   // When lighting is active, the background is very dark (the void beyond walls)
@@ -981,7 +1016,7 @@ function draw() {
     const scene = player.getScene(boundaries);
     render3D(scene, player.eyeHeight, player.pitch);
     // Update fog of war even during instructions so player sees starting area
-    fogOfWar.setBoundaries(boundaries);
+    syncFogBoundaries();
     fogOfWar.updateExploration(player.pos.x, player.pos.y, player.viewDirection, player.camera.fov);
     drawMinimap(minimap_ctx, boundaries, player, enemies, ActiveMap.goalZone, ActiveMap.startZone, null, fogOfWar);
     mazeInstructions.draw(main_ctx, main_canvas.width, main_canvas.height);
@@ -1105,7 +1140,7 @@ function draw() {
     }
 
     // Update enemy boundary
-    const enemyBoundary = boundaries.find(b => b.uniqueID === enemy.id);
+    const enemyBoundary = enemyBoundaryMap.get(enemy.id);
     if (enemyBoundary) {
       enemyBoundary.updatePosition(enemy.pos.x, enemy.pos.y);
       
@@ -1142,7 +1177,7 @@ function draw() {
 
   // Update fog of war exploration (view-based with wall occlusion)
   if (isMazeMap) {
-    fogOfWar.setBoundaries(boundaries);
+    syncFogBoundaries();
     fogOfWar.updateExploration(player.pos.x, player.pos.y, player.viewDirection, player.camera.fov);
   }
 

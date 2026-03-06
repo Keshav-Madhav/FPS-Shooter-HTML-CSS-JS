@@ -60,6 +60,7 @@ class RaycastManager {
     
     // Boundaries reference
     this._boundaries = [];
+    this._boundaryIndexMap = new Map();
     this._boundariesDirty = true;
     
     // Initialize worker if requested
@@ -164,6 +165,10 @@ class RaycastManager {
   updateBoundaries(boundaries) {
     this._boundaries = boundaries;
     this._boundariesDirty = true;
+    this._boundaryIndexMap.clear();
+    for (let i = 0; i < boundaries.length; i++) {
+      this._boundaryIndexMap.set(boundaries[i], i);
+    }
     
     // Update spatial grid for main thread
     this.spatialGrid.buildFromBoundaries(boundaries);
@@ -351,7 +356,7 @@ class RaycastManager {
           if (correctedDist < closestDist) {
             closestDist = correctedDist;
             closestTextureX = result.textureX;
-            closestBoundaryIdx = this._boundaries.indexOf(boundary);
+            closestBoundaryIdx = this._boundaryIndexMap.get(boundary) ?? -1;
           }
         }
       }

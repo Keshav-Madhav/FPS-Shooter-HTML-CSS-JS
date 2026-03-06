@@ -247,66 +247,6 @@ function castRayAgainstCurvedBoundary(rayPosX, rayPosY, rayDirX, rayDirY, bounda
 }
 
 /**
- * Performs raycasting for a batch of rays
- * Uses SIMD-like processing by handling 4 rays at a time
- */
-function castRayBatch(rayData, boundaries, startIdx, batchSize = 4) {
-  const results = [];
-  
-  for (let i = 0; i < batchSize; i++) {
-    const rayIdx = startIdx + i;
-    if (rayIdx >= rayData.count) break;
-    
-    const posX = rayData.posX;
-    const posY = rayData.posY;
-    const dirX = rayData.directions[rayIdx * 2];
-    const dirY = rayData.directions[rayIdx * 2 + 1];
-    const cosCorrection = rayData.cosCache[rayIdx];
-    
-    let closestDist = Infinity;
-    let closestTextureX = 0;
-    let closestBoundaryIdx = -1;
-    
-    // Get boundaries along this ray using spatial grid
-    const boundaryCount = spatialGrid.getBoundariesAlongRay(
-      posX, posY, dirX, dirY, 
-      config.maxRenderDistance,
-      rayResultArray, seenSet
-    );
-    
-    // Test each boundary
-    for (let j = 0; j < boundaryCount; j++) {
-      const boundary = rayResultArray[j];
-      
-      let result;
-      if (boundary.isCurved) {
-        result = castRayAgainstCurvedBoundary(posX, posY, dirX, dirY, boundary);
-      } else {
-        result = castRayAgainstBoundary(posX, posY, dirX, dirY, boundary);
-      }
-      
-      if (result && result.distance < closestDist) {
-        // Apply fisheye correction
-        const correctedDist = result.distance * cosCorrection;
-        if (correctedDist < closestDist) {
-          closestDist = correctedDist;
-          closestTextureX = result.textureX;
-          closestBoundaryIdx = boundary.id;
-        }
-      }
-    }
-    
-    results.push({
-      distance: closestDist,
-      textureX: closestTextureX,
-      boundaryIndex: closestBoundaryIdx
-    });
-  }
-  
-  return results;
-}
-
-/**
  * Main raycasting function - processes all rays
  */
 function performRaycasting(rayData) {
@@ -321,15 +261,56 @@ function performRaycasting(rayData) {
   
   // Process rays in batches of 4 (SIMD-like)
   const BATCH_SIZE = 4;
+  const posX = rayData.posX;
+  const posY = rayData.posY;
+  const directions = rayData.directions;
+  const cosCache = rayData.cosCache;
   
   for (let i = 0; i < rayCount; i += BATCH_SIZE) {
-    const batchResults = castRayBatch(rayData, boundaryData, i, BATCH_SIZE);
-    
-    for (let j = 0; j < batchResults.length; j++) {
-      const idx = i + j;
-      distanceBuffer[idx] = batchResults[j].distance;
-      textureXBuffer[idx] = batchResults[j].textureX;
-      boundaryIndexBuffer[idx] = batchResults[j].boundaryIndex;
+    for (let b = 0; b < BATCH_SIZE; b++) {
+      const rayIdx = i + b;
+      if (rayIdx >= rayCount) break;
+
+      const dirX = directions[rayIdx * 2];
+      const dirY = directions[rayIdx * 2 + 1];
+      const cosCorrection = cosCache[rayIdx];
+
+      let closestDist = Infinity;
+      let closestTextureX = 0;
+      let closestBoundaryIdx = -1;
+
+      // Get boundaries along this ray using spatial grid
+      const boundaryCount = spatialGrid.getBoundariesAlongRay(
+        posX, posY, dirX, dirY,
+        config.maxRenderDistance,
+        rayResultArray, seenSet
+      );
+
+      // Test each boundary
+      for (let j = 0; j < boundaryCount; j++) {
+        const boundary = rayResultArray[j];
+
+        let result;
+        if (boundary.isCurved) {
+          result = castRayAgainstCurvedBoundary(posX, posY, dirX, dirY, boundary);
+        } else {
+          result = castRayAgainstBoundary(posX, posY, dirX, dirY, boundary);
+        }
+
+        if (result && result.distance < closestDist) {
+          // Apply fisheye correction
+          const correctedDist = result.distance * cosCorrection;
+          if (correctedDist < closestDist) {
+            closestDist = correctedDist;
+            closestTextureX = result.textureX;
+            closestBoundaryIdx = boundary.id;
+          }
+        }
+      }
+
+      distanceBuffer[rayIdx] = closestDist;
+      textureXBuffer[rayIdx] = closestTextureX;
+      boundaryIndexBuffer[rayIdx] = closestBoundaryIdx;
     }
   }
   

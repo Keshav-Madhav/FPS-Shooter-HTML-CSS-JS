@@ -375,8 +375,11 @@ class CameraClass {
         }
       }
       
-      // Collect transparent hits that are closer than the closest opaque hit
-      const transparentHits = [];
+      // Reuse transparent hit objects per ray to avoid per-frame allocations
+      const sceneItem = scene[i];
+      const transparentHits = sceneItem.transparentHits;
+      transparentHits.length = 0;
+      let transparentHitCount = 0;
       
       if (transparentBoundaries.length > 0) {
         for (let j = 0; j < transparentBoundaries.length; j++) {
@@ -412,34 +415,49 @@ class CameraClass {
                 hitTextureX = texResult;
               }
               
-              transparentHits.push({
-                distance: correctedDist,
-                textureX: hitTextureX,
-                texture: hitBound.texture,
-                color: hitBound.color || null,
-                boundary: hitBound,
-                point,
-                spriteTexture,
-                mirrored
-              });
+              let hitEntry = transparentHits[transparentHitCount];
+              if (!hitEntry) {
+                hitEntry = {
+                  distance: 0,
+                  textureX: 0,
+                  texture: null,
+                  color: null,
+                  boundary: null,
+                  point: { x: 0, y: 0 },
+                  spriteTexture: null,
+                  mirrored: false
+                };
+                transparentHits[transparentHitCount] = hitEntry;
+              }
+              hitEntry.distance = correctedDist;
+              hitEntry.textureX = hitTextureX;
+              hitEntry.texture = hitBound.texture;
+              hitEntry.color = hitBound.color || null;
+              hitEntry.boundary = hitBound;
+              hitEntry.point.x = point.x;
+              hitEntry.point.y = point.y;
+              hitEntry.spriteTexture = spriteTexture;
+              hitEntry.mirrored = mirrored;
+              transparentHitCount++;
             }
           }
         }
         
         // Sort by distance (closest first)
-        if (transparentHits.length > 1) {
+        transparentHits.length = transparentHitCount;
+        if (transparentHitCount > 1) {
           transparentHits.sort((a, b) => a.distance - b.distance);
         }
+      } else {
+        transparentHits.length = 0;
       }
       
       // Update scene result (reuse objects to avoid allocation)
-      const sceneItem = scene[i];
       sceneItem.distance = closestDist;
       sceneItem.textureX = textureX;
       sceneItem.texture = texture;
       sceneItem.color = color;
       sceneItem.boundary = hitBoundary;
-      sceneItem.transparentHits = transparentHits;
       sceneItem.heightMultiplier = heightMult; // Pass to renderer
       sceneItem.hitX = closestHit ? closestHit.x : 0;
       sceneItem.hitY = closestHit ? closestHit.y : 0;
@@ -568,8 +586,11 @@ class CameraClass {
         }
       }
       
-      // Collect transparent hits that are closer than the closest opaque hit
-      const transparentHits = [];
+      // Reuse transparent hit objects per ray to avoid per-frame allocations
+      const sceneItem = scene[i];
+      const transparentHits = sceneItem.transparentHits;
+      transparentHits.length = 0;
+      let transparentHitCount = 0;
       
       if (numTransparent > 0) {
         for (let j = 0; j < numTransparent; j++) {
@@ -606,34 +627,49 @@ class CameraClass {
                 hitTextureX = texResult;
               }
               
-              transparentHits.push({
-                distance: correctedDist,
-                textureX: hitTextureX,
-                texture: hitBound.texture,
-                color: hitBound.color || null,
-                boundary: hitBound,
-                point,
-                spriteTexture,
-                mirrored
-              });
+              let hitEntry = transparentHits[transparentHitCount];
+              if (!hitEntry) {
+                hitEntry = {
+                  distance: 0,
+                  textureX: 0,
+                  texture: null,
+                  color: null,
+                  boundary: null,
+                  point: { x: 0, y: 0 },
+                  spriteTexture: null,
+                  mirrored: false
+                };
+                transparentHits[transparentHitCount] = hitEntry;
+              }
+              hitEntry.distance = correctedDist;
+              hitEntry.textureX = hitTextureX;
+              hitEntry.texture = hitBound.texture;
+              hitEntry.color = hitBound.color || null;
+              hitEntry.boundary = hitBound;
+              hitEntry.point.x = point.x;
+              hitEntry.point.y = point.y;
+              hitEntry.spriteTexture = spriteTexture;
+              hitEntry.mirrored = mirrored;
+              transparentHitCount++;
             }
           }
         }
         
         // Sort by distance (closest first) - only if we have multiple
-        if (transparentHits.length > 1) {
+        transparentHits.length = transparentHitCount;
+        if (transparentHitCount > 1) {
           transparentHits.sort((a, b) => a.distance - b.distance);
         }
+      } else {
+        transparentHits.length = 0;
       }
 
       // Reuse scene result objects to avoid allocation
-      const sceneItem = scene[i];
       sceneItem.distance = closestDist;
       sceneItem.textureX = textureX;
       sceneItem.texture = texture;
       sceneItem.color = color;
       sceneItem.boundary = hitBoundary;
-      sceneItem.transparentHits = transparentHits;
     }
     
     return scene;
