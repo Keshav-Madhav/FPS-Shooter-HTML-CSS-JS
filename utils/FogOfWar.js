@@ -46,10 +46,25 @@ class FogOfWar {
     // Immediate radius around player (360 degrees, blocked by walls)
     this.immediateRadius = 50;
     this.immediateRayCount = 24; // Reduced for performance
+    this._immediateRayDirs = new Float32Array(this.immediateRayCount * 2);
+    this._buildImmediateRayDirs();
     
     // Throttle exploration updates
     this._lastUpdateTime = 0;
     this._updateInterval = 16; // ~60fps max for exploration updates
+  }
+
+  /**
+   * Precomputes immediate ray directions (unit vectors) to avoid per-frame trig.
+   * @private
+   */
+  _buildImmediateRayDirs() {
+    for (let i = 0; i < this.immediateRayCount; i++) {
+      const angleRad = (i / this.immediateRayCount) * Math.PI * 2;
+      const idx = i * 2;
+      this._immediateRayDirs[idx] = Math.cos(angleRad);
+      this._immediateRayDirs[idx + 1] = Math.sin(angleRad);
+    }
   }
 
   // =========================================
@@ -109,16 +124,17 @@ class FogOfWar {
    * Reveals small 360-degree area around player (blocked by walls)
    */
   revealImmediateArea(playerX, playerY) {
-    // Cast rays in all directions around the player
     for (let i = 0; i < this.immediateRayCount; i++) {
-      const angleRad = (i / this.immediateRayCount) * Math.PI * 2;
-      
+      const idx = i * 2;
+      const dirX = this._immediateRayDirs[idx];
+      const dirY = this._immediateRayDirs[idx + 1];
+
       // Cast ray and get distance to nearest wall
-      const hitDist = this.castRay(playerX, playerY, angleRad);
+      const hitDist = this.castRayDir(playerX, playerY, dirX, dirY);
       const rayDist = Math.min(hitDist, this.immediateRadius);
-      
+
       // Reveal cells along this ray
-      this.revealAlongRay(playerX, playerY, angleRad, rayDist);
+      this.revealAlongRayDir(playerX, playerY, dirX, dirY, rayDist);
     }
   }
 
@@ -126,18 +142,27 @@ class FogOfWar {
    * Casts rays within FOV to reveal visible cells
    */
   castVisibilityRays(playerX, playerY, viewDirection, fov) {
-    const halfFov = fov / 2;
-    const startAngle = viewDirection - halfFov;
-    const angleStep = fov / this.rayCount;
-    
+    const halfFovRad = (fov * Math.PI / 180) * 0.5;
+    const viewDirRad = viewDirection * Math.PI / 180;
+    const startAngleRad = viewDirRad - halfFovRad;
+    const angleStepRad = (fov * Math.PI / 180) / this.rayCount;
+
+    // Use trigonometric recurrence to avoid trig calls per ray.
+    const cosStep = Math.cos(angleStepRad);
+    const sinStep = Math.sin(angleStepRad);
+    let dirX = Math.cos(startAngleRad);
+    let dirY = Math.sin(startAngleRad);
+
     for (let i = 0; i <= this.rayCount; i++) {
-      const angleDeg = startAngle + i * angleStep;
-      const angleRad = angleDeg * Math.PI / 180;
-      
-      const hitDist = this.castRay(playerX, playerY, angleRad);
+      const hitDist = this.castRayDir(playerX, playerY, dirX, dirY);
       const rayDist = Math.min(hitDist, this.revealDistance);
-      
-      this.revealAlongRay(playerX, playerY, angleRad, rayDist);
+
+      this.revealAlongRayDir(playerX, playerY, dirX, dirY, rayDist);
+
+      const nextDirX = dirX * cosStep - dirY * sinStep;
+      const nextDirY = dirY * cosStep + dirX * sinStep;
+      dirX = nextDirX;
+      dirY = nextDirY;
     }
   }
 
@@ -147,6 +172,13 @@ class FogOfWar {
   castRay(startX, startY, angleRad) {
     const dirX = Math.cos(angleRad);
     const dirY = Math.sin(angleRad);
+    return this.castRayDir(startX, startY, dirX, dirY);
+  }
+
+  /**
+   * Casts a ray with a precomputed unit direction vector.
+   */
+  castRayDir(startX, startY, dirX, dirY) {
     let closestDist = this.revealDistance;
     
     for (const boundary of this.boundaries) {
@@ -170,6 +202,13 @@ class FogOfWar {
   revealAlongRay(startX, startY, angleRad, distance) {
     const dirX = Math.cos(angleRad);
     const dirY = Math.sin(angleRad);
+    this.revealAlongRayDir(startX, startY, dirX, dirY, distance);
+  }
+
+  /**
+   * Reveals cells along a ray using precomputed direction.
+   */
+  revealAlongRayDir(startX, startY, dirX, dirY, distance) {
     const stepSize = this.cellSize * 0.5;
     const steps = Math.ceil(distance / stepSize);
     

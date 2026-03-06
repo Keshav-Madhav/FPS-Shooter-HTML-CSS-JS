@@ -142,22 +142,21 @@ class GameStateManager {
    * 
    * COMPLETION_BONUS = 5000 (only if won, 0 if lost)
    * 
-   * DETECTION_PENALTY = detectionCount × 500
-   *   - Each time you get detected costs 500 points
-   * 
-   * PATH_BONUS = 1500 if path was NOT used, 0 otherwise
-   * 
-   * ALERT_BONUS = (alertRemaining / alertMax) × 2000
-   *   - More alert bar remaining = more points (0-2000)
-   * 
-   * TIME_MULTIPLIER: Based on completion time
-   *   - Under 60s:  2.0x (speed demon)
-   *   - 60-120s:    1.5x (fast)
-   *   - 120-180s:   1.2x (good pace)
-   *   - 180-240s:   1.0x (normal)
-   *   - 240-360s:   0.8x (slow)
-   *   - 360-480s:   0.6x (very slow)
-   *   - Over 480s:  0.4x (too slow)
+   * DETECTION_PENALTY = detectionCount × 300
+   *   - Each time you get detected costs 300 points
+   *
+   * PATH_BONUS = 2000 if path was NOT used, 0 otherwise
+   *
+   * ALERT_BONUS = (alertRemaining / alertMax) × 2500
+   *   - More alert bar remaining = more points (0-2500)
+   *
+   * TIME_MULTIPLIER: Based on completion time (relaxed for darker gameplay)
+   *   - Under 90s:  2.0x (speed demon)
+   *   - 90-180s:    1.5x (fast)
+   *   - 180-300s:   1.0x (good pace)
+   *   - 300-420s:   0.8x (normal)
+   *   - 420-600s:   0.6x (slow)
+   *   - Over 600s:  0.5x (minimum)
    * 
    * The multiplier amplifies both positive AND negative scores:
    * - Fast + good play = very high score
@@ -174,42 +173,39 @@ class GameStateManager {
     // Completion bonus (only awarded for winning)
     const completionBonus = isWin ? 5000 : 0;
     
-    // Detection penalty (each detection costs points)
-    const detectionPenalty = this.detectionCount * 500;
-    
+    // Detection penalty (each detection costs points - reduced for darker/harder maps)
+    const detectionPenalty = this.detectionCount * 300;
+
     // Path ability bonus (didn't use the cheat = bonus)
-    const pathBonus = this.pathUsedOnce ? 0 : 1500;
-    
+    const pathBonus = this.pathUsedOnce ? 0 : 2000;
+
     // Alert remaining bonus (more alert = more points)
     const alertPercent = this.detectionTimer / this.detectionTimerMax;
-    const alertBonus = Math.floor(alertPercent * 2000);
+    const alertBonus = Math.floor(alertPercent * 2500);
     
     // Calculate raw score before time multiplier
     const rawScore = completionBonus + pathBonus + alertBonus - detectionPenalty;
     
-    // Calculate time multiplier based on completion time
+    // Calculate time multiplier based on completion time (relaxed for darker/harder gameplay)
     let timeMultiplier;
-    if (completionTimeSec < 60) {
-      // Under 1 minute: 2.0x
+    if (completionTimeSec < 90) {
+      // Under 1.5 minutes: 2.0x
       timeMultiplier = 2.0;
-    } else if (completionTimeSec < 120) {
-      // 1-2 minutes: interpolate from 2.0 to 1.5
-      timeMultiplier = 2.0 - ((completionTimeSec - 60) / 60) * 0.5;
     } else if (completionTimeSec < 180) {
-      // 2-3 minutes: interpolate from 1.5 to 1.2
-      timeMultiplier = 1.5 - ((completionTimeSec - 120) / 60) * 0.3;
-    } else if (completionTimeSec < 240) {
-      // 3-4 minutes: interpolate from 1.2 to 1.0
-      timeMultiplier = 1.2 - ((completionTimeSec - 180) / 60) * 0.2;
-    } else if (completionTimeSec < 360) {
-      // 4-6 minutes: interpolate from 1.0 to 0.8
-      timeMultiplier = 1.0 - ((completionTimeSec - 240) / 120) * 0.2;
-    } else if (completionTimeSec < 480) {
-      // 6-8 minutes: interpolate from 0.8 to 0.6
-      timeMultiplier = 0.8 - ((completionTimeSec - 360) / 120) * 0.2;
+      // 1.5-3 minutes: interpolate from 2.0 to 1.5
+      timeMultiplier = 2.0 - ((completionTimeSec - 90) / 90) * 0.5;
+    } else if (completionTimeSec < 300) {
+      // 3-5 minutes: interpolate from 1.5 to 1.0
+      timeMultiplier = 1.5 - ((completionTimeSec - 180) / 120) * 0.5;
+    } else if (completionTimeSec < 420) {
+      // 5-7 minutes: interpolate from 1.0 to 0.8
+      timeMultiplier = 1.0 - ((completionTimeSec - 300) / 120) * 0.2;
+    } else if (completionTimeSec < 600) {
+      // 7-10 minutes: interpolate from 0.8 to 0.6
+      timeMultiplier = 0.8 - ((completionTimeSec - 420) / 180) * 0.2;
     } else {
-      // Over 8 minutes: 0.4x minimum
-      timeMultiplier = Math.max(0.4, 0.6 - ((completionTimeSec - 480) / 300) * 0.2);
+      // Over 10 minutes: 0.5x minimum
+      timeMultiplier = Math.max(0.5, 0.6 - ((completionTimeSec - 600) / 300) * 0.1);
     }
     
     // Round multiplier to 2 decimal places for display

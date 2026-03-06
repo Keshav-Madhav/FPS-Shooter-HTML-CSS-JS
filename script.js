@@ -78,6 +78,11 @@ fogOfWar.setRevealDistance(FogOfWarConfig.revealDistance);
 
 // Noclip mode state
 let noclipEnabled = false;
+let lastPathUpdateTime = 0;
+let lastPathUpdateX = 0;
+let lastPathUpdateY = 0;
+const PATH_UPDATE_INTERVAL_MS = 120;
+const PATH_UPDATE_MIN_DIST_SQ = 25;
 
 // ===========================================
 // INITIALIZE UI COMPONENTS
@@ -657,6 +662,9 @@ function setActiveMap(maps, mapName) {
   // Reset game state
   const isMazeMap = !!ActiveMap.mazeData;
   gameState.reset(isMazeMap);
+  lastPathUpdateTime = 0;
+  lastPathUpdateX = player.pos.x;
+  lastPathUpdateY = player.pos.y;
   
   // Handle instructions for maze map
   if (isMazeMap) {
@@ -748,6 +756,9 @@ function resetGame() {
   
   const isMazeMap = !!ActiveMap.mazeData;
   gameState.reset(isMazeMap);
+  lastPathUpdateTime = 0;
+  lastPathUpdateX = player.pos.x;
+  lastPathUpdateY = player.pos.y;
   
   gameOverScreen.hide();
   winScreen.hide();
@@ -1166,13 +1177,23 @@ function draw() {
 
   // Update path if showing
   if (gameState.showPath && isMazeMap) {
-    const path = findMazePath(
-      ActiveMap.mazeData,
-      ActiveMap.startZone,
-      player.pos,
-      ActiveMap.goalZone
-    );
-    gameState.setPath(path);
+    const now = performance.now();
+    const dx = player.pos.x - lastPathUpdateX;
+    const dy = player.pos.y - lastPathUpdateY;
+    const movedEnough = (dx * dx + dy * dy) >= PATH_UPDATE_MIN_DIST_SQ;
+    const intervalElapsed = (now - lastPathUpdateTime) >= PATH_UPDATE_INTERVAL_MS;
+    if (intervalElapsed || movedEnough) {
+      const path = findMazePath(
+        ActiveMap.mazeData,
+        ActiveMap.startZone,
+        player.pos,
+        ActiveMap.goalZone
+      );
+      gameState.setPath(path);
+      lastPathUpdateTime = now;
+      lastPathUpdateX = player.pos.x;
+      lastPathUpdateY = player.pos.y;
+    }
   }
 
   // Update fog of war exploration (view-based with wall occlusion)

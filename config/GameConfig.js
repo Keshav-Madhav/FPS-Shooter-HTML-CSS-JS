@@ -68,10 +68,10 @@ export const PlayerConfig = {
   uncrouchSpeed: 0.08,
 
   // Speed multipliers
-  baseMoveSpeed: 1,
+  baseMoveSpeed: 0.75,
   crouchSpeedMultiplier: 0.45,
-  sprintSpeedMultiplier: 3,
-  jumpSpeedMultiplier: 1.4,
+  sprintSpeedMultiplier: 2.6,
+  jumpSpeedMultiplier: 1.3,
 
   // FOV settings
   baseFov: 80,
@@ -87,8 +87,8 @@ export const PlayerConfig = {
   flashlightConeAngle: 25,   // half-cone in degrees
   flashlightRange: 300,
   flashlightIntensity: 0.9,
-  flashlightDrainRate: 0.02,  // per second when on
-  flashlightRechargeRate: 0.01, // per second when off
+  flashlightDrainRate: 0.018,  // per second when on
+  flashlightRechargeRate: 0.013, // per second when off
 
   // Crouch visibility modifiers
   crouchFlashlightRangeMultiplier: 0.5,
@@ -102,10 +102,10 @@ export const PlayerConfig = {
 // ===========================================
 export const DetectionConfig = {
   // Timer settings
-  timerMax: 3.0,
-  drainRate: 1.0,        // Per second when detected
-  regenRate: 0.1,        // Per second when not detected
-  regenDelay: 1.0,       // Seconds before regen starts
+  timerMax: 3.5,
+  drainRate: 0.9,        // Per second when detected
+  regenRate: 0.15,       // Per second when not detected
+  regenDelay: 0.8,       // Seconds before regen starts
 
   // Path reveal settings
   pathDisplayDuration: 5000, // Milliseconds
